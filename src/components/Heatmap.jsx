@@ -46,8 +46,8 @@ function cellClasses(record, dateStr, today) {
   if (record.status === "zero")
     return `${rounded} bg-red-600 hover:bg-red-500 cursor-pointer`;
 
-  // Productive sin cerrar → en curso (pulsante)
-  if (!record.closedAt)
+  // Pulsante solo si es HOY y está activo — nunca en días pasados
+  if (!record.closedAt && dateStr === today)
     return `${rounded} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
 
   // Productive cerrado — tres saltos de color bien diferenciados

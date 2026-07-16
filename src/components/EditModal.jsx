@@ -46,10 +46,13 @@ export default function EditModal({ date, record, onSave, onClose }) {
       finalStatus === "zero"     ? 0 :
       quarterMinutesToHours(qm);
 
+    const now = new Date().toISOString();
     if (isNew) {
-      await createRecord({ date, status: finalStatus, hours, note: note || null });
+      await createRecord({ date, status: finalStatus, hours, note: note || null, closedAt: now });
     } else {
-      await updateRecord(record.id, { status: finalStatus, hours, note: note || null });
+      // Siempre sella closedAt al editar manualmente — evita estado "abierto" en días pasados
+      const closedAt = record.closedAt ?? now;
+      await updateRecord(record.id, { status: finalStatus, hours, note: note || null, closedAt });
     }
     onSave();
   }
