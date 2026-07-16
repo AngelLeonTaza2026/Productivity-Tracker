@@ -36,17 +36,18 @@ function cellClasses(record, dateStr, today) {
   if (!record)
     return `${rounded} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
 
-  // Día abierto (en curso)
-  if (!record.closedAt)
-    return `${rounded} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
-
+  // Status siempre gana — el color nunca depende solo de closedAt
   if (record.status === "vacation")
     return `${rounded} bg-violet-700 hover:bg-violet-600 cursor-pointer`;
 
   if (record.status === "zero")
     return `${rounded} bg-red-600 hover:bg-red-500 cursor-pointer`;
 
-  // Productive — escala por horas
+  // Productive sin cerrar → en curso (pulsante)
+  if (!record.closedAt)
+    return `${rounded} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
+
+  // Productive cerrado — escala por horas
   const h = record.hours ?? 0;
   if (h >= 5) return `${rounded} bg-green-500 hover:bg-green-400 cursor-pointer`;
   if (h >= 3) return `${rounded} bg-green-700 hover:bg-green-600 cursor-pointer`;
