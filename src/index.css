@@ -9,3 +9,6 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
 }
+
+/* Oculta scrollbar en el wheel picker */
+.wheel-scroll::-webkit-scrollbar { display: none; }
