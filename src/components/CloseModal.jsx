@@ -149,12 +149,18 @@ export default function CloseModal({ onConfirm, onCancel }) {
         </div>
 
         {/* Alternativas */}
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={() => onConfirm({ hours: 0, status: "zero" })}
             className="flex-1 py-3 rounded-xl bg-neutral-800 text-neutral-400 text-xs tracking-widest uppercase hover:bg-neutral-700 transition-colors"
           >
-            Sin nada (0)
+            Cero
+          </button>
+          <button
+            onClick={() => onConfirm({ hours: null, status: "rest" })}
+            className="flex-1 py-3 rounded-xl bg-amber-900/40 text-amber-500 text-xs tracking-widest uppercase hover:bg-amber-900/60 transition-colors"
+          >
+            Descanso
           </button>
           <button
             onClick={() => onConfirm({ hours: null, status: "vacation" })}

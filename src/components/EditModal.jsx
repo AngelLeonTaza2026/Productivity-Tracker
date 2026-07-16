@@ -42,6 +42,7 @@ export default function EditModal({ date, record, onSave, onClose }) {
     const finalStatus = effectiveStatus;
     const hours =
       finalStatus === "vacation" ? null :
+      finalStatus === "rest"     ? null :
       finalStatus === "zero"     ? 0 :
       quarterMinutesToHours(qm);
 
@@ -82,10 +83,11 @@ export default function EditModal({ date, record, onSave, onClose }) {
         </div>
 
         {/* Status */}
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 flex-wrap">
           {[
             { key: "productive", label: "Productivo" },
             { key: "zero",       label: "Cero" },
+            { key: "rest",       label: "Descanso" },
             { key: "vacation",   label: "Vacaciones" },
           ].map(({ key, label }) => (
             <button

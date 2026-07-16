@@ -40,6 +40,9 @@ function cellClasses(record, dateStr, today) {
   if (record.status === "vacation")
     return `${rounded} bg-violet-700 hover:bg-violet-600 cursor-pointer`;
 
+  if (record.status === "rest")
+    return `${rounded} bg-amber-500 hover:bg-amber-400 cursor-pointer`;
+
   if (record.status === "zero")
     return `${rounded} bg-red-600 hover:bg-red-500 cursor-pointer`;
 
@@ -47,11 +50,11 @@ function cellClasses(record, dateStr, today) {
   if (!record.closedAt)
     return `${rounded} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
 
-  // Productive cerrado — escala por horas
+  // Productive cerrado — tres saltos de color bien diferenciados
   const h = record.hours ?? 0;
-  if (h >= 5) return `${rounded} bg-green-500 hover:bg-green-400 cursor-pointer`;
-  if (h >= 3) return `${rounded} bg-green-700 hover:bg-green-600 cursor-pointer`;
-  if (h >= 1) return `${rounded} bg-green-900 hover:bg-green-800 cursor-pointer`;
+  if (h >= 5) return `${rounded} bg-green-400 hover:bg-green-300 cursor-pointer`; // brillante
+  if (h >= 3) return `${rounded} bg-green-600 hover:bg-green-500 cursor-pointer`; // medio
+  if (h >= 1) return `${rounded} bg-green-900 hover:bg-green-800 cursor-pointer`; // oscuro
 
   return `${rounded} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
 }
@@ -178,14 +181,16 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
       {/* Leyenda */}
       <div className="flex items-center gap-2 mt-4 ml-[21px] flex-wrap">
         <span className="text-[10px] text-neutral-700">menos</span>
-        {["bg-neutral-800","bg-green-900","bg-green-700","bg-green-500"].map((c) => (
+        {["bg-green-900","bg-green-600","bg-green-400"].map((c) => (
           <div key={c} className={`rounded-sm ${c}`} style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
         ))}
         <span className="text-[10px] text-neutral-700">más</span>
         <div className="rounded-sm bg-red-600 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
         <span className="text-[10px] text-neutral-700">0</span>
-        <div className="rounded-sm bg-violet-700 ml-1" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
-        <span className="text-[10px] text-neutral-700">V</span>
+        <div className="rounded-sm bg-amber-500 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
+        <span className="text-[10px] text-neutral-700">descanso</span>
+        <div className="rounded-sm bg-violet-700 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
+        <span className="text-[10px] text-neutral-700">vacaciones</span>
       </div>
 
       {selectedDate && (
