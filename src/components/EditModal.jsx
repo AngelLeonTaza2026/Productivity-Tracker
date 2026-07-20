@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { createRecord, updateRecord, deleteRecord } from "../db/index.js";
 import { quarterMinutesToHours } from "../utils/time.js";
 
-const ITEM_H = 64;
+const ITEM_H  = 64;
+const VIS     = 3;             // slots visibles: arriba + centro + abajo
+const WHEEL_H = ITEM_H * VIS; // 192px
+const PAD_H   = ITEM_H;       // 1 item de padding en cada extremo
+
 const HOUR_VALUES = Array.from({ length: 17 }, (_, i) => i); // 0–16 h
 const MIN_VALUES  = [0, 15, 30, 45];
 const MIN_PRODUCTIVE = 60;
@@ -35,6 +39,17 @@ function hoursToHM(hours) {
   return { h: Math.floor(totalMin / 60), m: totalMin % 60 };
 }
 
+function fmtDay(dateStr) {
+  return new Date(`${dateStr}T00:00:00`)
+    .toLocaleDateString("es", { day: "numeric", month: "long" });
+}
+
+function fmtWeekday(dateStr) {
+  return new Date(`${dateStr}T00:00:00`)
+    .toLocaleDateString("es", { weekday: "short" });
+}
+
+// ── Rueda compacta (3 slots visibles) ──────────────────────────────────────
 function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, scrollToRef }) {
   const scrollRef = useRef(null);
   const timerRef  = useRef(null);
@@ -75,24 +90,24 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
 
   return (
     <div style={{
-      position: "relative", flex: 1, height: ITEM_H * 5, overflow: "hidden",
+      position: "relative", flex: 1, height: WHEEL_H, overflow: "hidden",
       opacity: disabled ? 0.18 : 1,
       pointerEvents: disabled ? "none" : "auto",
       transition: "opacity 0.2s ease",
     }}>
-      {/* Selection lines */}
+      {/* Líneas de selección */}
       <div style={{
         position: "absolute", left: "10%", right: "10%",
-        top: ITEM_H * 2, height: ITEM_H, pointerEvents: "none", zIndex: 3,
+        top: PAD_H, height: ITEM_H, pointerEvents: "none", zIndex: 3,
         borderTop: "1px solid rgba(255,255,255,0.15)",
         borderBottom: "1px solid rgba(255,255,255,0.15)",
       }} />
-      {/* Fade mask */}
+      {/* Fade top/bottom */}
       <div style={{
         position: "absolute", inset: 0, pointerEvents: "none", zIndex: 3,
-        background: "linear-gradient(to bottom, rgb(23,23,23) 0%, rgba(23,23,23,0) 25%, rgba(23,23,23,0) 75%, rgb(23,23,23) 100%)",
+        background: "linear-gradient(to bottom, rgb(23,23,23) 0%, rgba(23,23,23,0) 32%, rgba(23,23,23,0) 68%, rgb(23,23,23) 100%)",
       }} />
-      {/* Scroll list */}
+      {/* Lista scrolleable */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -104,11 +119,11 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
           scrollbarWidth: "none",
         }}
       >
-        <div style={{ height: ITEM_H * 2 }} />
+        <div style={{ height: PAD_H }} />
         {items.map((v, i) => {
           const dist  = Math.abs(i - scrollTop / ITEM_H);
-          const op    = Math.max(0.08, 1 - dist * 0.42);
-          const scale = Math.max(0.5,  1 - dist * 0.20);
+          const op    = Math.max(0.08, 1 - dist * 0.52);
+          const scale = Math.max(0.55, 1 - dist * 0.22);
           return (
             <div
               key={i}
@@ -126,18 +141,17 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
                 lineHeight: 1,
                 color: "white",
                 letterSpacing: "0.04em",
-                imageRendering: "pixelated",
               }}>
                 {String(v).padStart(2, "0")}
               </span>
             </div>
           );
         })}
-        <div style={{ height: ITEM_H * 2 }} />
+        <div style={{ height: PAD_H }} />
       </div>
-      {/* Unit label */}
+      {/* Etiqueta */}
       <div style={{
-        position: "absolute", bottom: ITEM_H * 1.75, left: 0, right: 0,
+        position: "absolute", bottom: 6, left: 0, right: 0,
         display: "flex", justifyContent: "center",
         pointerEvents: "none", zIndex: 4,
       }}>
@@ -145,7 +159,7 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
           fontFamily: "'Press Start 2P', monospace",
           fontSize: "0.38rem",
           letterSpacing: "0.22em",
-          color: "rgba(255,255,255,0.28)",
+          color: "rgba(255,255,255,0.22)",
         }}>
           {label}
         </span>
@@ -154,6 +168,7 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
   );
 }
 
+// ── Modal principal ────────────────────────────────────────────────────────
 export default function EditModal({ date, record, onSave, onClose }) {
   const isNew = !record;
   const { h: initH, m: initM } = hoursToHM(record?.hours);
@@ -220,14 +235,22 @@ export default function EditModal({ date, record, onSave, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <button className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-label="Cerrar" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6 py-12">
+      <button
+        className="absolute inset-0 bg-black/75 backdrop-blur-md"
+        onClick={onClose}
+        aria-label="Cerrar"
+      />
 
       <div
-        className="relative z-10 w-full max-w-sm bg-neutral-900 rounded-t-3xl sm:rounded-2xl px-6 pt-5 flex flex-col gap-4"
-        style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))" }}
+        className="relative z-10 w-full max-w-xs bg-neutral-900 rounded-3xl px-6 py-6 flex flex-col gap-4"
+        style={{ animation: "modal-in 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both" }}
       >
-        <div className="w-10 h-1 rounded-full bg-neutral-700 mx-auto sm:hidden" />
+        {/* Fecha */}
+        <div className="text-center pt-1">
+          <p className="text-neutral-200 text-sm capitalize">{fmtDay(date)}</p>
+          <p className="text-neutral-600 text-[11px] mt-0.5">({fmtWeekday(date)})</p>
+        </div>
 
         {/* Wheel — solo si productive */}
         {status === "productive" && (
@@ -264,7 +287,7 @@ export default function EditModal({ date, record, onSave, onClose }) {
           </div>
         )}
 
-        {/* Color swatches — selector de status */}
+        {/* Swatches de color para el status */}
         <div className="flex justify-center gap-5 py-1">
           {STATUS_OPTS.map(({ key, color }) => (
             <button

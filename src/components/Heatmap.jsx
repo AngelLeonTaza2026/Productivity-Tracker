@@ -93,7 +93,7 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
       setTimeout(() => {
         setSelectedDate(dateStr);
         setZoom(prev => ({ ...prev, phase: "open" }));
-      }, 260);
+      }, 340);
     } else {
       setSelectedDate(dateStr);
     }
@@ -101,7 +101,7 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
 
   function zoomOut() {
     setZoom(prev => ({ ...prev, phase: "out" }));
-    setTimeout(() => setZoom({ phase: "idle", ox: 0, oy: 0 }), 320);
+    setTimeout(() => setZoom({ phase: "idle", ox: 0, oy: 0 }), 560);
   }
 
   function handleSaved() {
@@ -120,7 +120,7 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
   const gridZoomStyle = {
     transformOrigin: `${zoom.ox}px ${zoom.oy}px`,
     transform: zoomed ? "scale(2.5)" : "scale(1)",
-    transition: zoom.phase === "idle" ? "none" : "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)",
+    transition: zoom.phase === "idle" ? "none" : "transform 0.52s cubic-bezier(0.34, 1.56, 0.64, 1)",
   };
 
   // Ancho de la columna de números de día
