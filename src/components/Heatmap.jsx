@@ -106,7 +106,11 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
 
   function zoomOut() {
     setZoom(prev => ({ ...prev, phase: "out" }));
-    setTimeout(() => setZoom({ phase: "idle", ox: 0, oy: 0 }), 560);
+    setTimeout(() => {
+      setZoom({ phase: "idle", ox: 0, oy: 0 });
+      // Reencuadra la tabla exactamente en su posición default tras la animación
+      if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
+    }, 560);
   }
   function handleSaved() { setSelectedDate(null); onRecordChange?.(); zoomOut(); }
   function handleClose() { setSelectedDate(null); zoomOut(); }
