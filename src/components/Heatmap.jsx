@@ -2,17 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { getActiveRecord, getRecordsByYear } from "../db/index.js";
 import EditModal from "./EditModal.jsx";
 
-// ── Constantes de layout ───────────────────────────────────────────────────
-const CELL = 24; // px — tamaño de cada casilla
-const GAP  = 3;  // px — espacio entre casillas
-
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
+const LABEL_W = 18; // px — columna de números de día (fija)
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function daysInMonth(year, month) {
-  return new Date(year, month, 0).getDate(); // month es 1-based
-}
+function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
 
 function toLocalStr(date) {
   const y = date.getFullYear();
@@ -21,52 +14,57 @@ function toLocalStr(date) {
   return `${y}-${m}-${d}`;
 }
 
-function todayStr() {
-  return toLocalStr(new Date());
-}
-
-// ── Color de cada casilla ──────────────────────────────────────────────────
+function todayStr() { return toLocalStr(new Date()); }
 
 function cellClasses(record, dateStr, today) {
-  const rounded = "rounded-sm";
-
-  if (dateStr > today)
-    return `${rounded} bg-neutral-900/40 cursor-default`;
-
-  if (!record)
-    return `${rounded} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
-
-  // Status siempre gana — el color nunca depende solo de closedAt
-  if (record.status === "vacation")
-    return `${rounded} bg-violet-700 hover:bg-violet-600 cursor-pointer`;
-
-  if (record.status === "rest")
-    return `${rounded} bg-amber-500 hover:bg-amber-400 cursor-pointer`;
-
-  if (record.status === "zero")
-    return `${rounded} bg-red-600 hover:bg-red-500 cursor-pointer`;
-
-  // Pulsante solo si es HOY y está activo — nunca en días pasados
+  const r = "rounded-sm";
+  if (dateStr > today)         return `${r} bg-neutral-900/40 cursor-default`;
+  if (!record)                 return `${r} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
+  if (record.status === "vacation") return `${r} bg-violet-700 hover:bg-violet-600 cursor-pointer`;
+  if (record.status === "rest")     return `${r} bg-amber-500 hover:bg-amber-400 cursor-pointer`;
+  if (record.status === "zero")     return `${r} bg-red-600 hover:bg-red-500 cursor-pointer`;
   if (!record.closedAt && dateStr === today)
-    return `${rounded} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
-
-  // Productive cerrado — tres saltos de color bien diferenciados
+    return `${r} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
   const h = record.hours ?? 0;
-  if (h >= 5) return `${rounded} bg-green-400 hover:bg-green-300 cursor-pointer`; // brillante
-  if (h >= 3) return `${rounded} bg-green-600 hover:bg-green-500 cursor-pointer`; // medio
-  if (h >= 1) return `${rounded} bg-green-900 hover:bg-green-800 cursor-pointer`; // oscuro
-
-  return `${rounded} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
+  if (h >= 5) return `${r} bg-green-400 hover:bg-green-300 cursor-pointer`;
+  if (h >= 3) return `${r} bg-green-600 hover:bg-green-500 cursor-pointer`;
+  if (h >= 1) return `${r} bg-green-900 hover:bg-green-800 cursor-pointer`;
+  return `${r} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
 }
 
-// ── Componente ─────────────────────────────────────────────────────────────
+// Calcula el tamaño de celda máximo que hace entrar el año completo en pantalla
+function computeCell() {
+  if (typeof window === "undefined") return { cell: 18, gap: 2 };
+  // 32 filas (cabecera + días 1-31), 13 columnas (label + 12 meses)
+  // alto label del año ≈ 32px, nav ≈ 80px, respiración ≈ 12px
+  const availW = window.innerWidth  - 16;
+  const availH = window.innerHeight - 80 - 32 - 12;
+  for (let c = 28; c >= 8; c--) {
+    const g = Math.max(1, Math.round(c * 0.12));
+    const w = LABEL_W + 12 * c + 11 * g;
+    const h = 32 * c + 31 * g;
+    if (w <= availW && h <= availH) return { cell: c, gap: g };
+  }
+  return { cell: 8, gap: 1 };
+}
 
 export default function Heatmap({ year = new Date().getFullYear(), refreshKey, onRecordChange }) {
-  const [recordMap, setRecordMap]   = useState({});
+  const [recordMap, setRecordMap] = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
   const [zoom, setZoom] = useState({ phase: "idle", ox: 0, oy: 0 });
+  const [dims, setDims] = useState(() => computeCell());
   const gridRef = useRef(null);
   const today = todayStr();
+
+  const cellPx  = dims.cell;
+  const gapPx   = dims.gap;
+  const fontSize = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
+
+  useEffect(() => {
+    function onResize() { setDims(computeCell()); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -103,19 +101,9 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     setZoom(prev => ({ ...prev, phase: "out" }));
     setTimeout(() => setZoom({ phase: "idle", ox: 0, oy: 0 }), 560);
   }
+  function handleSaved() { setSelectedDate(null); onRecordChange?.(); zoomOut(); }
+  function handleClose() { setSelectedDate(null); zoomOut(); }
 
-  function handleSaved() {
-    setSelectedDate(null);
-    onRecordChange?.();
-    zoomOut();
-  }
-
-  function handleClose() {
-    setSelectedDate(null);
-    zoomOut();
-  }
-
-  // Zoom style — solo aplica al contenedor del grid, no al modal
   const zoomed = zoom.phase === "in" || zoom.phase === "open";
   const gridZoomStyle = {
     transformOrigin: `${zoom.ox}px ${zoom.oy}px`,
@@ -123,74 +111,64 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     transition: zoom.phase === "idle" ? "none" : "transform 0.52s cubic-bezier(0.34, 1.56, 0.64, 1)",
   };
 
-  // Ancho de la columna de números de día
-  const labelColW = 18;
-
   const gridStyle = {
     display: "grid",
-    gridTemplateColumns: `${labelColW}px repeat(12, ${CELL}px)`,
-    gap: `${GAP}px`,
+    gridTemplateColumns: `${LABEL_W}px repeat(12, ${cellPx}px)`,
+    gap: `${gapPx}px`,
   };
 
-  // Construye las filas: [label, ...12 celdas]
+  // ── Construir filas ────────────────────────────────────────────────────────
   const rows = [];
 
-  // Fila de encabezado: esquina vacía + iniciales de mes
-  rows.push(
-    <div key="corner" style={{ width: labelColW }} />,
-    ...MONTH_INITIALS.map((initial, mi) => (
+  // Cabecera: hueco + iniciales de mes
+  rows.push(<div key="corner" style={{ width: LABEL_W }} />);
+  MONTH_INITIALS.forEach((initial, mi) => {
+    rows.push(
       <div
         key={`mh-${mi}`}
-        className="text-center text-[10px] text-neutral-600 select-none"
-        style={{ lineHeight: `${CELL}px` }}
+        className="text-center text-neutral-600 select-none"
+        style={{ lineHeight: `${cellPx}px`, fontSize }}
       >
         {initial}
       </div>
-    ))
-  );
+    );
+  });
 
-  // Filas de días 1–31
+  // Días 1–31
   for (let day = 1; day <= 31; day++) {
-    // Número del día
     rows.push(
       <div
         key={`dl-${day}`}
-        className="text-right text-[10px] text-neutral-700 select-none pr-0.5"
-        style={{ lineHeight: `${CELL}px`, width: labelColW }}
+        className="text-right text-neutral-700 select-none pr-px"
+        style={{ lineHeight: `${cellPx}px`, width: LABEL_W, fontSize }}
       >
         {day}
       </div>
     );
 
-    // 12 celdas (una por mes)
     for (let month = 1; month <= 12; month++) {
-      const valid = day <= daysInMonth(year, month);
+      const valid   = day <= daysInMonth(year, month);
       const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const isToday = dateStr === today;
 
       if (!valid) {
-        // Día inexistente en este mes — relleno discreto
         rows.push(
           <div
             key={`${month}-${day}`}
             className="rounded-sm bg-neutral-900/50"
-            style={{ width: CELL, height: CELL }}
+            style={{ width: cellPx, height: cellPx }}
           />
         );
         continue;
       }
 
       const record = recordMap[dateStr];
-
       rows.push(
         <button
           key={`${month}-${day}`}
           onClick={(e) => handleCellClick(dateStr, e)}
-          className={[
-            cellClasses(record, dateStr, today),
-            isToday ? "ring-1 ring-white/30" : "",
-          ].join(" ")}
-          style={{ width: CELL, height: CELL }}
+          className={[cellClasses(record, dateStr, today), isToday ? "ring-1 ring-white/30" : ""].join(" ")}
+          style={{ width: cellPx, height: cellPx }}
           aria-label={dateStr}
           title={dateStr}
         />
@@ -199,36 +177,20 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
   }
 
   return (
-    <div className="w-full">
-      {/* Encabezado — año discreto */}
-      <div className="flex items-baseline gap-2 mb-4 ml-[21px]">
-        <span className="text-xs text-neutral-600 tracking-widest uppercase">registro</span>
-        <span className="text-neutral-700 text-sm font-mono">{year}</span>
+    <div className="w-full h-full flex flex-col items-center justify-center">
+      {/* Año — solo el número, centrado, sin "registro" */}
+      <div className="mb-3 select-none">
+        <span className="text-neutral-600 font-mono text-sm tracking-[0.3em]">{year}</span>
       </div>
 
-      {/* Grid — este div recibe el zoom; overflow-hidden en wrapper para clipear */}
+      {/* Grid — zoom sobre el contenedor; overflow-hidden en wrapper para clipear */}
       <div style={zoomed ? { overflow: "hidden" } : {}}>
-        <div ref={gridRef} className="overflow-x-auto pb-2" style={gridZoomStyle}>
+        <div ref={gridRef} style={gridZoomStyle}>
           <div style={gridStyle}>{rows}</div>
         </div>
       </div>
 
-      {/* Leyenda — fuera del zoom */}
-      <div className="flex items-center gap-2 mt-4 ml-[21px] flex-wrap">
-        <span className="text-[10px] text-neutral-700">menos</span>
-        {["bg-green-900","bg-green-600","bg-green-400"].map((c) => (
-          <div key={c} className={`rounded-sm ${c}`} style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
-        ))}
-        <span className="text-[10px] text-neutral-700">más</span>
-        <div className="rounded-sm bg-red-600 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
-        <span className="text-[10px] text-neutral-700">0</span>
-        <div className="rounded-sm bg-amber-500 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
-        <span className="text-[10px] text-neutral-700">descanso</span>
-        <div className="rounded-sm bg-violet-700 ml-2" style={{ width: CELL * 0.7, height: CELL * 0.7 }} />
-        <span className="text-[10px] text-neutral-700">vacaciones</span>
-      </div>
-
-      {/* Modal — fuera del div transformado, position:fixed no se rompe */}
+      {/* Modal — fuera del elemento transformado, position:fixed no se rompe */}
       {selectedDate && (
         <EditModal
           date={selectedDate}

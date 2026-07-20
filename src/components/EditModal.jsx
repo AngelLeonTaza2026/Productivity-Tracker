@@ -262,16 +262,16 @@ export default function EditModal({ date, record, onSave, onClose }) {
         <div className="text-center pt-1 pb-0.5">
           <p
             className="capitalize text-neutral-200"
-            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.68rem", lineHeight: 1.8 }}
+            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.85rem", lineHeight: 1.8 }}
           >
             {fmtDay(date)}
           </p>
           <p
             style={{
               fontFamily: "'Press Start 2P', monospace",
-              fontSize: "0.42rem",
-              color: "rgba(255,255,255,0.22)",
-              marginTop: 4,
+              fontSize: "0.54rem",
+              color: "rgba(255,255,255,0.3)",
+              marginTop: 6,
             }}
           >
             ({fmtWeekday(date)})
