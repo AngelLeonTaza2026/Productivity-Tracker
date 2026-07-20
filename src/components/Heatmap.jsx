@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getActiveRecord, getRecordsByYear } from "../db/index.js";
 import EditModal from "./EditModal.jsx";
 
@@ -64,6 +64,8 @@ function cellClasses(record, dateStr, today) {
 export default function Heatmap({ year = new Date().getFullYear(), refreshKey, onRecordChange }) {
   const [recordMap, setRecordMap]   = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
+  const [zoom, setZoom] = useState({ phase: "idle", ox: 0, oy: 0 });
+  const gridRef = useRef(null);
   const today = todayStr();
 
   useEffect(() => {
@@ -80,15 +82,46 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     load();
   }, [year, refreshKey]);
 
-  function handleCellClick(dateStr) {
+  function handleCellClick(dateStr, e) {
     if (dateStr > today) return;
-    setSelectedDate(dateStr);
+    if (gridRef.current) {
+      const gr = gridRef.current.getBoundingClientRect();
+      const cr = e.currentTarget.getBoundingClientRect();
+      const ox = cr.left + cr.width  / 2 - gr.left;
+      const oy = cr.top  + cr.height / 2 - gr.top;
+      setZoom({ phase: "in", ox, oy });
+      setTimeout(() => {
+        setSelectedDate(dateStr);
+        setZoom(prev => ({ ...prev, phase: "open" }));
+      }, 260);
+    } else {
+      setSelectedDate(dateStr);
+    }
+  }
+
+  function zoomOut() {
+    setZoom(prev => ({ ...prev, phase: "out" }));
+    setTimeout(() => setZoom({ phase: "idle", ox: 0, oy: 0 }), 320);
   }
 
   function handleSaved() {
     setSelectedDate(null);
     onRecordChange?.();
+    zoomOut();
   }
+
+  function handleClose() {
+    setSelectedDate(null);
+    zoomOut();
+  }
+
+  // Zoom style — solo aplica al contenedor del grid, no al modal
+  const zoomed = zoom.phase === "in" || zoom.phase === "open";
+  const gridZoomStyle = {
+    transformOrigin: `${zoom.ox}px ${zoom.oy}px`,
+    transform: zoomed ? "scale(2.5)" : "scale(1)",
+    transition: zoom.phase === "idle" ? "none" : "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)",
+  };
 
   // Ancho de la columna de números de día
   const labelColW = 18;
@@ -152,7 +185,7 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
       rows.push(
         <button
           key={`${month}-${day}`}
-          onClick={() => handleCellClick(dateStr)}
+          onClick={(e) => handleCellClick(dateStr, e)}
           className={[
             cellClasses(record, dateStr, today),
             isToday ? "ring-1 ring-white/30" : "",
@@ -173,12 +206,14 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
         <span className="text-neutral-700 text-sm font-mono">{year}</span>
       </div>
 
-      {/* Grid */}
-      <div className="overflow-x-auto pb-2">
-        <div style={gridStyle}>{rows}</div>
+      {/* Grid — este div recibe el zoom; overflow-hidden en wrapper para clipear */}
+      <div style={zoomed ? { overflow: "hidden" } : {}}>
+        <div ref={gridRef} className="overflow-x-auto pb-2" style={gridZoomStyle}>
+          <div style={gridStyle}>{rows}</div>
+        </div>
       </div>
 
-      {/* Leyenda */}
+      {/* Leyenda — fuera del zoom */}
       <div className="flex items-center gap-2 mt-4 ml-[21px] flex-wrap">
         <span className="text-[10px] text-neutral-700">menos</span>
         {["bg-green-900","bg-green-600","bg-green-400"].map((c) => (
@@ -193,12 +228,13 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
         <span className="text-[10px] text-neutral-700">vacaciones</span>
       </div>
 
+      {/* Modal — fuera del div transformado, position:fixed no se rompe */}
       {selectedDate && (
         <EditModal
           date={selectedDate}
           record={recordMap[selectedDate]}
           onSave={handleSaved}
-          onClose={() => setSelectedDate(null)}
+          onClose={handleClose}
         />
       )}
     </div>
