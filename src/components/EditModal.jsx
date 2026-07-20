@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createRecord, updateRecord, deleteRecord } from "../db/index.js";
 import { quarterMinutesToHours } from "../utils/time.js";
 
-const ITEM_H  = 64;
-const VIS     = 3;             // slots visibles: arriba + centro + abajo
-const WHEEL_H = ITEM_H * VIS; // 192px
-const PAD_H   = ITEM_H;       // 1 item de padding en cada extremo
+const ITEM_H  = 58;
+const VIS     = 3;
+const WHEEL_H = ITEM_H * VIS;
+const PAD_H   = ITEM_H;
 
-const HOUR_VALUES = Array.from({ length: 17 }, (_, i) => i); // 0–16 h
+const HOUR_VALUES = Array.from({ length: 17 }, (_, i) => i);
 const MIN_VALUES  = [0, 15, 30, 45];
 const MIN_PRODUCTIVE = 60;
 
@@ -17,6 +17,14 @@ const STATUS_OPTS = [
   { key: "rest",       color: "#f59e0b" },
   { key: "vacation",   color: "#7c3aed" },
 ];
+
+// Clases sutiles del botón de guardar según status efectivo
+const SAVE_BTN = {
+  productive: "bg-green-950 text-green-500 hover:bg-green-900",
+  zero:       "bg-red-950 text-red-500 hover:bg-red-900",
+  rest:       "bg-amber-950 text-amber-500 hover:bg-amber-900",
+  vacation:   "bg-violet-950 text-violet-500 hover:bg-violet-900",
+};
 
 function computeGlow(minutes) {
   if (minutes <= 0) return null;
@@ -49,7 +57,7 @@ function fmtWeekday(dateStr) {
     .toLocaleDateString("es", { weekday: "short" });
 }
 
-// ── Rueda compacta (3 slots visibles) ──────────────────────────────────────
+// ── Rueda ──────────────────────────────────────────────────────────────────
 function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, scrollToRef }) {
   const scrollRef = useRef(null);
   const timerRef  = useRef(null);
@@ -91,23 +99,20 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
   return (
     <div style={{
       position: "relative", flex: 1, height: WHEEL_H, overflow: "hidden",
-      opacity: disabled ? 0.18 : 1,
+      opacity: disabled ? 0.15 : 1,
       pointerEvents: disabled ? "none" : "auto",
       transition: "opacity 0.2s ease",
     }}>
-      {/* Líneas de selección */}
       <div style={{
         position: "absolute", left: "10%", right: "10%",
         top: PAD_H, height: ITEM_H, pointerEvents: "none", zIndex: 3,
-        borderTop: "1px solid rgba(255,255,255,0.15)",
-        borderBottom: "1px solid rgba(255,255,255,0.15)",
+        borderTop: "1px solid rgba(255,255,255,0.13)",
+        borderBottom: "1px solid rgba(255,255,255,0.13)",
       }} />
-      {/* Fade top/bottom */}
       <div style={{
         position: "absolute", inset: 0, pointerEvents: "none", zIndex: 3,
         background: "linear-gradient(to bottom, rgb(23,23,23) 0%, rgba(23,23,23,0) 32%, rgba(23,23,23,0) 68%, rgb(23,23,23) 100%)",
       }} />
-      {/* Lista scrolleable */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -122,7 +127,7 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
         <div style={{ height: PAD_H }} />
         {items.map((v, i) => {
           const dist  = Math.abs(i - scrollTop / ITEM_H);
-          const op    = Math.max(0.08, 1 - dist * 0.52);
+          const op    = Math.max(0.07, 1 - dist * 0.54);
           const scale = Math.max(0.55, 1 - dist * 0.22);
           return (
             <div
@@ -137,7 +142,7 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
             >
               <span style={{
                 fontFamily: "'Press Start 2P', monospace",
-                fontSize: "1.45rem",
+                fontSize: "1.35rem",
                 lineHeight: 1,
                 color: "white",
                 letterSpacing: "0.04em",
@@ -149,17 +154,16 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
         })}
         <div style={{ height: PAD_H }} />
       </div>
-      {/* Etiqueta */}
       <div style={{
-        position: "absolute", bottom: 6, left: 0, right: 0,
+        position: "absolute", bottom: 5, left: 0, right: 0,
         display: "flex", justifyContent: "center",
         pointerEvents: "none", zIndex: 4,
       }}>
         <span style={{
           fontFamily: "'Press Start 2P', monospace",
-          fontSize: "0.38rem",
+          fontSize: "0.36rem",
           letterSpacing: "0.22em",
-          color: "rgba(255,255,255,0.22)",
+          color: "rgba(255,255,255,0.2)",
         }}>
           {label}
         </span>
@@ -168,7 +172,7 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
   );
 }
 
-// ── Modal principal ────────────────────────────────────────────────────────
+// ── Modal ──────────────────────────────────────────────────────────────────
 export default function EditModal({ date, record, onSave, onClose }) {
   const isNew = !record;
   const { h: initH, m: initM } = hoursToHM(record?.hours);
@@ -184,10 +188,12 @@ export default function EditModal({ date, record, onSave, onClose }) {
   const minsRef = useRef(initM);
   const minsScrollToRef = useRef(null);
 
+  // minsDisabled usa hrs (estado actual, no initH) para evitar bug al remontar
   const minsDisabled = status === "productive" && hrs === 0;
   const underMin     = status === "productive" && liveMin < MIN_PRODUCTIVE;
   const effectiveSt  = underMin ? "zero" : status;
   const glow         = status === "productive" ? computeGlow(liveMin) : null;
+  const wheelShown   = status === "productive";
 
   function onHrsLive(h) { setLiveMin(h * 60 + minsRef.current); }
   function onMinsLive(m) { setLiveMin(hrsRef.current * 60 + m); }
@@ -234,8 +240,10 @@ export default function EditModal({ date, record, onSave, onClose }) {
     onSave();
   }
 
+  const saveBtnClass = SAVE_BTN[effectiveSt] ?? "bg-neutral-800 text-neutral-300";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6 py-12">
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-8 py-14">
       <button
         className="absolute inset-0 bg-black/75 backdrop-blur-md"
         onClick={onClose}
@@ -243,40 +251,64 @@ export default function EditModal({ date, record, onSave, onClose }) {
       />
 
       <div
-        className="relative z-10 w-full max-w-xs bg-neutral-900 rounded-3xl px-6 py-6 flex flex-col gap-4"
-        style={{ animation: "modal-in 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both" }}
+        className="relative z-10 w-full bg-neutral-900 rounded-3xl px-5 py-5 flex flex-col gap-3"
+        style={{
+          maxWidth: 272,
+          animation: "modal-in 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+        }}
       >
-        {/* Fecha */}
-        <div className="text-center pt-1">
-          <p className="text-neutral-200 text-sm capitalize">{fmtDay(date)}</p>
-          <p className="text-neutral-600 text-[11px] mt-0.5">({fmtWeekday(date)})</p>
+        {/* Fecha en pixel art */}
+        <div className="text-center pt-1 pb-0.5">
+          <p
+            className="capitalize text-neutral-200"
+            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.68rem", lineHeight: 1.8 }}
+          >
+            {fmtDay(date)}
+          </p>
+          <p
+            style={{
+              fontFamily: "'Press Start 2P', monospace",
+              fontSize: "0.42rem",
+              color: "rgba(255,255,255,0.22)",
+              marginTop: 4,
+            }}
+          >
+            ({fmtWeekday(date)})
+          </p>
         </div>
 
-        {/* Wheel — solo si productive */}
-        {status === "productive" && (
+        {/* Wheel — transición suave show/hide con max-height + opacity */}
+        <div style={{
+          maxHeight: wheelShown ? `${WHEEL_H + 8}px` : "0px",
+          opacity: wheelShown ? 1 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.28s ease, opacity 0.22s ease",
+        }}>
           <div
             className="rounded-2xl overflow-hidden"
-            style={{ background: glow ?? "rgba(23,23,23,0.5)" }}
+            style={{ background: glow ?? "rgb(23,23,23)" }}
           >
             <div className="flex items-center">
+              {/* initialValue usa hrs/mins (estado actual), no initH/initM
+                  para evitar inconsistencia al remontar tras cambio de status */}
               <Wheel
                 items={HOUR_VALUES}
-                initialValue={initH}
+                initialValue={hrs}
                 onSettle={onHrsSettle}
                 onLiveChange={onHrsLive}
                 label="HORAS"
               />
               <span style={{
                 fontFamily: "'Press Start 2P', monospace",
-                fontSize: "1.1rem",
-                color: "rgba(255,255,255,0.22)",
+                fontSize: "0.95rem",
+                color: "rgba(255,255,255,0.2)",
                 userSelect: "none",
               }}>
                 :
               </span>
               <Wheel
                 items={MIN_VALUES}
-                initialValue={initM}
+                initialValue={mins}
                 onSettle={onMinsSettle}
                 onLiveChange={onMinsLive}
                 label="MIN"
@@ -285,57 +317,57 @@ export default function EditModal({ date, record, onSave, onClose }) {
               />
             </div>
           </div>
-        )}
+        </div>
 
-        {/* Swatches de color para el status */}
-        <div className="flex justify-center gap-5 py-1">
+        {/* Swatches de color */}
+        <div className="flex justify-center gap-4 py-1">
           {STATUS_OPTS.map(({ key, color }) => (
             <button
               key={key}
               onClick={() => setStatus(key)}
               style={{
-                width: 34,
-                height: 34,
+                width: 30,
+                height: 30,
                 borderRadius: "50%",
                 backgroundColor: color,
-                border: status === key ? "2.5px solid white" : "2.5px solid transparent",
+                border: status === key ? "2px solid white" : "2px solid transparent",
                 outline: status === key ? `2px solid ${color}` : "none",
                 outlineOffset: "2px",
-                transform: status === key ? "scale(1.2)" : "scale(1)",
-                transition: "transform 0.12s ease, outline 0.12s, border-color 0.12s",
+                transform: status === key ? "scale(1.22)" : "scale(1)",
+                transition: "transform 0.14s ease, outline 0.14s, border-color 0.14s",
               }}
             />
           ))}
         </div>
 
         {/* Acciones */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-0.5">
           {!isNew && (
             <button
               onClick={handleDelete}
               disabled={saving}
               className={[
-                "px-4 py-3 rounded-xl text-xs tracking-widest uppercase transition-colors",
+                "px-3 py-2.5 rounded-xl transition-colors",
                 confirmDelete
                   ? "bg-red-700 text-white hover:bg-red-600"
                   : "bg-neutral-800 text-red-500 hover:bg-neutral-700",
               ].join(" ")}
+              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.4rem", letterSpacing: "0.1em" }}
             >
-              {confirmDelete ? "¿Seguro?" : "Borrar"}
+              {confirmDelete ? "¿SEGURO?" : "BORRAR"}
             </button>
           )}
           <button
             onClick={handleSave}
             disabled={saving}
             className={[
-              "flex-1 py-3 rounded-xl text-xs tracking-widest uppercase transition-colors",
-              underMin
-                ? "bg-red-800 text-red-200 hover:bg-red-700"
-                : "bg-green-700 text-white hover:bg-green-600",
+              "flex-1 py-2.5 rounded-xl transition-colors duration-200",
+              saveBtnClass,
               saving ? "opacity-50" : "",
             ].join(" ")}
+            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.4rem", letterSpacing: "0.1em" }}
           >
-            {saving ? "…" : isNew ? "Agregar" : "Guardar"}
+            {saving ? "..." : isNew ? "AGREGAR" : "GUARDAR"}
           </button>
         </div>
       </div>
