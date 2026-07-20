@@ -3,7 +3,8 @@ import { getActiveRecord, getRecordsByYear } from "../db/index.js";
 import EditModal from "./EditModal.jsx";
 
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
-const LABEL_W = 18; // px — columna de números de día (fija)
+const LABEL_W  = 18;
+const YEAR_HDR = 56; // altura de la sección del año (oculta arriba por defecto)
 
 function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
 
@@ -16,29 +17,28 @@ function toLocalStr(date) {
 
 function todayStr() { return toLocalStr(new Date()); }
 
+// Sin rounded-sm — borderRadius se aplica proporcional al tamaño de la celda
 function cellClasses(record, dateStr, today) {
-  const r = "rounded-sm";
-  if (dateStr > today)         return `${r} bg-neutral-900/40 cursor-default`;
-  if (!record)                 return `${r} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
-  if (record.status === "vacation") return `${r} bg-violet-700 hover:bg-violet-600 cursor-pointer`;
-  if (record.status === "rest")     return `${r} bg-amber-500 hover:bg-amber-400 cursor-pointer`;
-  if (record.status === "zero")     return `${r} bg-red-600 hover:bg-red-500 cursor-pointer`;
+  if (dateStr > today)              return "bg-neutral-900/40 cursor-default";
+  if (!record)                      return "bg-neutral-800 hover:bg-neutral-700 cursor-pointer";
+  if (record.status === "vacation") return "bg-violet-700 hover:bg-violet-600 cursor-pointer";
+  if (record.status === "rest")     return "bg-amber-500 hover:bg-amber-400 cursor-pointer";
+  if (record.status === "zero")     return "bg-red-600 hover:bg-red-500 cursor-pointer";
   if (!record.closedAt && dateStr === today)
-    return `${r} bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer`;
+    return "bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer";
   const h = record.hours ?? 0;
-  if (h >= 5) return `${r} bg-green-400 hover:bg-green-300 cursor-pointer`;
-  if (h >= 3) return `${r} bg-green-600 hover:bg-green-500 cursor-pointer`;
-  if (h >= 1) return `${r} bg-green-900 hover:bg-green-800 cursor-pointer`;
-  return `${r} bg-neutral-800 hover:bg-neutral-700 cursor-pointer`;
+  if (h >= 5) return "bg-green-400 hover:bg-green-300 cursor-pointer";
+  if (h >= 3) return "bg-green-600 hover:bg-green-500 cursor-pointer";
+  if (h >= 1) return "bg-green-900 hover:bg-green-800 cursor-pointer";
+  return "bg-neutral-800 hover:bg-neutral-700 cursor-pointer";
 }
 
-// Calcula el tamaño de celda máximo que hace entrar el año completo en pantalla
+// Calcula la celda más grande que hace entrar el año completo
+// El año ya no ocupa espacio visible (está oculto arriba): sólo nav (80) + respiración (8)
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };
-  // 32 filas (cabecera + días 1-31), 13 columnas (label + 12 meses)
-  // alto label del año ≈ 32px, nav ≈ 80px, respiración ≈ 12px
   const availW = window.innerWidth  - 16;
-  const availH = window.innerHeight - 80 - 32 - 12;
+  const availH = window.innerHeight - 80 - 8;
   for (let c = 28; c >= 8; c--) {
     const g = Math.max(1, Math.round(c * 0.12));
     const w = LABEL_W + 12 * c + 11 * g;
@@ -53,12 +53,19 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
   const [selectedDate, setSelectedDate] = useState(null);
   const [zoom, setZoom] = useState({ phase: "idle", ox: 0, oy: 0 });
   const [dims, setDims] = useState(() => computeCell());
-  const gridRef = useRef(null);
+  const gridRef    = useRef(null);
+  const scrollRef  = useRef(null);
   const today = todayStr();
 
   const cellPx  = dims.cell;
   const gapPx   = dims.gap;
   const fontSize = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
+  const radius   = Math.max(1, Math.round(cellPx * 0.1)); // proporcional, nunca circular
+
+  // Inicializar posición del scroll: ocultar el año arriba del fold
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
+  }, []);
 
   useEffect(() => {
     function onResize() { setDims(computeCell()); }
@@ -117,12 +124,11 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     gap: `${gapPx}px`,
   };
 
-  // ── Construir filas ────────────────────────────────────────────────────────
+  // ── Construir filas ───────────────────────────────────────────────────────
   const rows = [];
 
-  // Cabecera: hueco + iniciales de mes
   rows.push(<div key="corner" style={{ width: LABEL_W }} />);
-  MONTH_INITIALS.forEach((initial, mi) => {
+  MONTH_INITIALS.forEach((initial, mi) => (
     rows.push(
       <div
         key={`mh-${mi}`}
@@ -131,10 +137,9 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
       >
         {initial}
       </div>
-    );
-  });
+    )
+  ));
 
-  // Días 1–31
   for (let day = 1; day <= 31; day++) {
     rows.push(
       <div
@@ -155,8 +160,8 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
         rows.push(
           <div
             key={`${month}-${day}`}
-            className="rounded-sm bg-neutral-900/50"
-            style={{ width: cellPx, height: cellPx }}
+            className="bg-neutral-900/50"
+            style={{ width: cellPx, height: cellPx, borderRadius: radius }}
           />
         );
         continue;
@@ -167,8 +172,11 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
         <button
           key={`${month}-${day}`}
           onClick={(e) => handleCellClick(dateStr, e)}
-          className={[cellClasses(record, dateStr, today), isToday ? "ring-1 ring-white/30" : ""].join(" ")}
-          style={{ width: cellPx, height: cellPx }}
+          className={[
+            cellClasses(record, dateStr, today),
+            isToday ? "ring-1 ring-white/30" : "",
+          ].join(" ")}
+          style={{ width: cellPx, height: cellPx, borderRadius: radius }}
           aria-label={dateStr}
           title={dateStr}
         />
@@ -177,20 +185,66 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
   }
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center">
-      {/* Año — solo el número, centrado, sin "registro" */}
-      <div className="mb-3 select-none">
-        <span className="text-neutral-600 font-mono text-sm tracking-[0.3em]">{year}</span>
-      </div>
+    <div className="w-full h-full">
+      {/*
+        Contenedor scroll con dos snap points:
+          scrollTop=0        → año visible (pull-to-reveal)
+          scrollTop=YEAR_HDR → grilla visible (vista por defecto)
+        Durante zoom se bloquea el scroll para no interrumpir la animación.
+      */}
+      <div
+        ref={scrollRef}
+        className="wheel-scroll"
+        style={{
+          width: "100%",
+          height: "100%",
+          overflowY: zoomed ? "hidden" : "scroll",
+          overflowX: "hidden",
+          scrollSnapType: "y mandatory",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
+        }}
+      >
+        {/* ── Sección del año (oculta arriba, se revela jalando hacia abajo) ── */}
+        <div
+          style={{
+            height: YEAR_HDR,
+            scrollSnapAlign: "start",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            paddingBottom: 14,
+            borderBottom: "1px solid rgba(255,255,255,0.07)",
+          }}
+        >
+          <span
+            className="select-none font-mono text-sm tracking-[0.35em]"
+            style={{ color: "rgba(255,255,255,0.28)" }}
+          >
+            {year}
+          </span>
+        </div>
 
-      {/* Grid — zoom sobre el contenedor; overflow-hidden en wrapper para clipear */}
-      <div style={zoomed ? { overflow: "hidden" } : {}}>
-        <div ref={gridRef} style={gridZoomStyle}>
-          <div style={gridStyle}>{rows}</div>
+        {/* ── Sección de la grilla (vista principal) ── */}
+        <div
+          style={{
+            minHeight: "100%",
+            scrollSnapAlign: "start",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Wrapper de clip para la animación de zoom */}
+          <div style={zoomed ? { overflow: "hidden" } : {}}>
+            <div ref={gridRef} style={gridZoomStyle}>
+              <div style={gridStyle}>{rows}</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Modal — fuera del elemento transformado, position:fixed no se rompe */}
+      {/* Modal — fuera del árbol transformado para que position:fixed no se rompa */}
       {selectedDate && (
         <EditModal
           date={selectedDate}

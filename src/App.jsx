@@ -18,7 +18,7 @@ export default function App() {
       )}
 
       {view === "year" && (
-        <div className="px-4 pt-8 pb-4">
+        <div className="fixed inset-0" style={{ bottom: 80 }}>
           <Heatmap refreshKey={refreshKey} onRecordChange={refresh} />
         </div>
       )}
