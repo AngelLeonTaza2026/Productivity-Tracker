@@ -7,9 +7,10 @@ const VIS     = 3;
 const WHEEL_H = ITEM_H * VIS;
 const PAD_H   = ITEM_H;
 
-const HOUR_VALUES = Array.from({ length: 17 }, (_, i) => i);
-const MIN_VALUES  = [0, 15, 30, 45];
-const MIN_PRODUCTIVE = 60;
+// En modo productivo, el mínimo es 1h — el 0 no tiene sentido aquí (para eso está el swatch rojo)
+const HOUR_VALUES_PROD = Array.from({ length: 16 }, (_, i) => i + 1); // 1–16 h
+const MIN_VALUES       = [0, 15, 30, 45];
+const MIN_PRODUCTIVE   = 60;
 
 const STATUS_OPTS = [
   { key: "productive", color: "#16a34a" },
@@ -48,8 +49,9 @@ function hoursToHM(hours) {
 }
 
 function fmtDay(dateStr) {
-  return new Date(`${dateStr}T00:00:00`)
-    .toLocaleDateString("es", { day: "numeric", month: "long" });
+  const d = new Date(`${dateStr}T00:00:00`);
+  const month = d.toLocaleDateString("es", { month: "long" });
+  return `${d.getDate()} / ${month}`;
 }
 
 function fmtWeekday(dateStr) {
@@ -175,41 +177,40 @@ function Wheel({ items, initialValue, onSettle, onLiveChange, label, disabled, s
 // ── Modal ──────────────────────────────────────────────────────────────────
 export default function EditModal({ date, record, onSave, onClose }) {
   const isNew = !record;
+  const initStatus = record?.status ?? "productive";
   const { h: initH, m: initM } = hoursToHM(record?.hours);
+  // En productivo el mínimo es 1h — si el registro era cero/null arrancamos en 1
+  const startH = initStatus === "productive" ? Math.max(1, initH) : initH;
 
-  const [status, setStatus]   = useState(record?.status ?? "productive");
-  const [hrs,  setHrs]        = useState(initH);
+  const [status, setStatus]   = useState(initStatus);
+  const [hrs,  setHrs]        = useState(startH);
   const [mins, setMins]       = useState(initM);
-  const [liveMin, setLiveMin] = useState(initH * 60 + initM);
+  const [liveMin, setLiveMin] = useState(startH * 60 + initM);
   const [saving, setSaving]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const hrsRef  = useRef(initH);
+  const hrsRef  = useRef(startH);
   const minsRef = useRef(initM);
-  const minsScrollToRef = useRef(null);
 
-  // minsDisabled usa hrs (estado actual, no initH) para evitar bug al remontar
-  const minsDisabled = status === "productive" && hrs === 0;
-  const underMin     = status === "productive" && liveMin < MIN_PRODUCTIVE;
-  const effectiveSt  = underMin ? "zero" : status;
-  const glow         = status === "productive" ? computeGlow(liveMin) : null;
-  const wheelShown   = status === "productive";
+  const underMin  = status === "productive" && liveMin < MIN_PRODUCTIVE;
+  const effectiveSt = underMin ? "zero" : status;
+  const glow      = status === "productive" ? computeGlow(liveMin) : null;
+  const wheelShown = status === "productive";
 
-  function onHrsLive(h) { setLiveMin(h * 60 + minsRef.current); }
-  function onMinsLive(m) { setLiveMin(hrsRef.current * 60 + m); }
-
-  function onHrsSettle(h) {
-    hrsRef.current = h;
-    setHrs(h);
-    if (h === 0) {
-      minsRef.current = 0;
-      setMins(0);
-      setLiveMin(0);
-      minsScrollToRef.current?.(0);
-    } else {
+  // Al cambiar a productivo, garantizar hrs >= 1
+  function handleStatusSelect(key) {
+    setStatus(key);
+    if (key === "productive" && hrs < 1) {
+      const h = 1;
+      setHrs(h);
+      hrsRef.current = h;
       setLiveMin(h * 60 + minsRef.current);
     }
   }
+
+  function onHrsLive(h) { setLiveMin(h * 60 + minsRef.current); }
+  function onMinsLive(m) { setLiveMin(hrsRef.current * 60 + m); }
+  function onHrsSettle(h) { hrsRef.current = h; setHrs(h); setLiveMin(h * 60 + minsRef.current); }
   function onMinsSettle(m) { minsRef.current = m; setMins(m); }
 
   async function handleSave() {
@@ -289,10 +290,8 @@ export default function EditModal({ date, record, onSave, onClose }) {
             style={{ background: glow ?? "rgb(23,23,23)" }}
           >
             <div className="flex items-center">
-              {/* initialValue usa hrs/mins (estado actual), no initH/initM
-                  para evitar inconsistencia al remontar tras cambio de status */}
               <Wheel
-                items={HOUR_VALUES}
+                items={HOUR_VALUES_PROD}
                 initialValue={hrs}
                 onSettle={onHrsSettle}
                 onLiveChange={onHrsLive}
@@ -312,8 +311,6 @@ export default function EditModal({ date, record, onSave, onClose }) {
                 onSettle={onMinsSettle}
                 onLiveChange={onMinsLive}
                 label="MIN"
-                disabled={minsDisabled}
-                scrollToRef={minsScrollToRef}
               />
             </div>
           </div>
@@ -324,7 +321,7 @@ export default function EditModal({ date, record, onSave, onClose }) {
           {STATUS_OPTS.map(({ key, color }) => (
             <button
               key={key}
-              onClick={() => setStatus(key)}
+              onClick={() => handleStatusSelect(key)}
               style={{
                 width: 30,
                 height: 30,
@@ -341,18 +338,18 @@ export default function EditModal({ date, record, onSave, onClose }) {
         </div>
 
         {/* Acciones */}
-        <div className="flex gap-2 pt-0.5">
+        <div className="flex gap-2 pt-1">
           {!isNew && (
             <button
               onClick={handleDelete}
               disabled={saving}
               className={[
-                "px-3 py-2.5 rounded-xl transition-colors",
+                "px-4 py-3.5 rounded-xl transition-colors",
                 confirmDelete
                   ? "bg-red-700 text-white hover:bg-red-600"
                   : "bg-neutral-800 text-red-500 hover:bg-neutral-700",
               ].join(" ")}
-              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.4rem", letterSpacing: "0.1em" }}
+              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.46rem", letterSpacing: "0.08em" }}
             >
               {confirmDelete ? "¿SEGURO?" : "BORRAR"}
             </button>
@@ -361,11 +358,11 @@ export default function EditModal({ date, record, onSave, onClose }) {
             onClick={handleSave}
             disabled={saving}
             className={[
-              "flex-1 py-2.5 rounded-xl transition-colors duration-200",
+              "flex-1 py-3.5 rounded-xl transition-colors duration-200",
               saveBtnClass,
               saving ? "opacity-50" : "",
             ].join(" ")}
-            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.4rem", letterSpacing: "0.1em" }}
+            style={{ fontFamily: "'Press Start 2P', monospace", fontSize: "0.46rem", letterSpacing: "0.08em" }}
           >
             {saving ? "..." : isNew ? "AGREGAR" : "GUARDAR"}
           </button>
