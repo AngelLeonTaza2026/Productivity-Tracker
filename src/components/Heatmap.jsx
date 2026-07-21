@@ -55,21 +55,66 @@ function resetViewportZoom() {
   requestAnimationFrame(() => { meta.content = orig; });
 }
 
-// ── Tooltip del crosshair ─────────────────────────────────────────────────
+// ── Tooltip del crosshair (bocadillo de cómic) ───────────────────────────
 function CrosshairTooltip({ cx, cy, dateStr, isPast, cellRect, radius }) {
   const d     = new Date(`${dateStr}T00:00:00`);
   const label = `${d.getDate()} / ${MONTH_SHORT[d.getMonth()]}`;
-  const TW    = 108;
-  const x     = Math.max(8, Math.min(window.innerWidth - TW - 8, cx - TW / 2));
-  // Si hay suficiente espacio arriba del dedo, poner el tooltip ahí
-  const above = cy > 90;
-  const y     = above ? cy - 68 : cy + 28;
-  const bg    = isPast ? "rgba(10,16,28,0.96)" : "rgba(30,30,30,0.9)";
-  const border = isPast ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.05)";
+  const TW    = 128;  // ancho del bocadillo
+  const GAP   = 12;   // distancia entre el dedo y el borde del bocadillo
+
+  // Preferencia: a la DERECHA del dedo; si no cabe, a la izquierda
+  const goRight = cx + GAP + TW + 8 <= window.innerWidth;
+  const bx      = goRight
+    ? cx + GAP                                 // bocadillo a la derecha
+    : Math.max(8, cx - GAP - TW);             // bocadillo a la izquierda
+
+  // Preferencia: por ENCIMA del dedo; si no cabe, por debajo
+  const BH     = 52;  // altura aprox. del bocadillo
+  const TAIL_H = 12;
+  const above  = cy > BH + TAIL_H + 16;
+  const by     = above
+    ? cy - BH - TAIL_H - 4   // encima
+    : cy + TAIL_H + 4;       // debajo
+
+  const bg     = isPast ? "rgba(8,14,28,0.97)" : "rgba(28,28,28,0.93)";
+  const bcolor = isPast ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.05)";
+
+  // La cola (triangular) sale de la esquina del bocadillo más cercana al dedo
+  // Se posiciona de forma absoluta dentro del bocadillo wrapper
+  //
+  //  goRight + above → cola en la esquina inferior-izquierda del bocadillo
+  //  goRight + below → cola en la esquina superior-izquierda
+  // !goRight + above → cola en la esquina inferior-derecha
+  // !goRight + below → cola en la esquina superior-derecha
+  const tailStyle = (() => {
+    const base = { position: "absolute", width: 0, height: 0 };
+    if (above && goRight) {
+      // cola abajo-izquierda → apunta al dedo que está abajo-izquierda
+      return { ...base, bottom: -TAIL_H, left: 14,
+        borderTop:  `${TAIL_H}px solid ${bg}`,
+        borderLeft: `${TAIL_H}px solid transparent` };
+    }
+    if (above && !goRight) {
+      // cola abajo-derecha
+      return { ...base, bottom: -TAIL_H, right: 14,
+        borderTop:   `${TAIL_H}px solid ${bg}`,
+        borderRight: `${TAIL_H}px solid transparent` };
+    }
+    if (!above && goRight) {
+      // cola arriba-izquierda → dedo está arriba-izquierda
+      return { ...base, top: -TAIL_H, left: 14,
+        borderBottom: `${TAIL_H}px solid ${bg}`,
+        borderLeft:   `${TAIL_H}px solid transparent` };
+    }
+    // !above && !goRight → cola arriba-derecha
+    return { ...base, top: -TAIL_H, right: 14,
+      borderBottom: `${TAIL_H}px solid ${bg}`,
+      borderRight:  `${TAIL_H}px solid transparent` };
+  })();
 
   return (
     <>
-      {/* Resalte de la celda seleccionada */}
+      {/* Resalte de la celda */}
       {cellRect && (
         <div
           className="fixed pointer-events-none"
@@ -80,57 +125,41 @@ function CrosshairTooltip({ cx, cy, dateStr, isPast, cellRect, radius }) {
             width:  cellRect.width  + 4,
             height: cellRect.height + 4,
             borderRadius: radius + 2,
-            border: `2px solid ${isPast ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.25)"}`,
-            boxShadow: isPast ? "0 0 10px rgba(255,255,255,0.35)" : "none",
+            border: `2px solid ${isPast ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.22)"}`,
+            boxShadow: isPast ? "0 0 10px rgba(255,255,255,0.32)" : "none",
           }}
         />
       )}
 
-      {/* Burbuja de fecha */}
+      {/* Bocadillo de cómic */}
       <div
         className="fixed pointer-events-none"
-        style={{ zIndex: 49, left: x, top: y, width: TW }}
+        style={{ zIndex: 49, left: bx, top: by, width: TW, position: "fixed" }}
       >
-        {/* Si la burbuja va ABAJO del dedo: caret apunta arriba (▲) */}
-        {!above && (
-          <div style={{
-            width: 0, height: 0,
-            borderLeft: "6px solid transparent",
-            borderRight: "6px solid transparent",
-            borderBottom: `7px solid ${bg}`,
-            margin: "0 auto 0",
-          }} />
-        )}
+        <div style={{ position: "relative" }}>
+          {/* Cola */}
+          <div style={tailStyle} />
 
-        <div style={{
-          backgroundColor: bg,
-          border: `1px solid ${border}`,
-          borderRadius: 9,
-          padding: "8px 10px",
-          textAlign: "center",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-        }}>
-          <span style={{
-            fontFamily: "'Press Start 2P', monospace",
-            fontSize: "0.54rem",
-            color: isPast ? "white" : "rgba(255,255,255,0.3)",
-            whiteSpace: "nowrap",
+          {/* Cuerpo del bocadillo */}
+          <div style={{
+            backgroundColor: bg,
+            border: `1px solid ${bcolor}`,
+            borderRadius: 12,
+            padding: "10px 14px",
+            textAlign: "center",
+            backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
           }}>
-            {label}
-          </span>
+            <span style={{
+              fontFamily: "'Press Start 2P', monospace",
+              fontSize: "0.72rem",
+              color: isPast ? "white" : "rgba(255,255,255,0.28)",
+              whiteSpace: "nowrap",
+            }}>
+              {label}
+            </span>
+          </div>
         </div>
-
-        {/* Caret apunta hacia la celda (abajo) cuando burbuja está arriba */}
-        {above && (
-          <div style={{
-            width: 0, height: 0,
-            borderLeft: "6px solid transparent",
-            borderRight: "6px solid transparent",
-            borderTop: `7px solid ${bg}`,
-            margin: "0 auto",
-          }} />
-        )}
       </div>
     </>
   );
