@@ -55,62 +55,45 @@ function resetViewportZoom() {
   requestAnimationFrame(() => { meta.content = orig; });
 }
 
-// ── Tooltip del crosshair (bocadillo de cómic) ───────────────────────────
+// ── Tooltip del crosshair (bocadillo de cómic con cola dinámica) ─────────
 function CrosshairTooltip({ cx, cy, dateStr, isPast, cellRect, radius }) {
   const d     = new Date(`${dateStr}T00:00:00`);
   const label = `${d.getDate()} / ${MONTH_SHORT[d.getMonth()]}`;
-  const TW    = 128;  // ancho del bocadillo
-  const GAP   = 12;   // distancia entre el dedo y el borde del bocadillo
 
-  // Preferencia: a la DERECHA del dedo; si no cabe, a la izquierda
+  const TW     = 128;  // ancho del bocadillo
+  const BH     = 42;   // altura aproximada del bocadillo
+  const GAP    = 14;   // espacio entre el dedo y el bocadillo
+  const TAIL_W = 8;    // semiancho de la base de la cola
+
+  // Bocadillo: a la DERECHA del dedo si cabe, si no a la izquierda
   const goRight = cx + GAP + TW + 8 <= window.innerWidth;
-  const bx      = goRight
-    ? cx + GAP                                 // bocadillo a la derecha
-    : Math.max(8, cx - GAP - TW);             // bocadillo a la izquierda
+  const bx = goRight ? cx + GAP : Math.max(8, cx - GAP - TW);
 
-  // Preferencia: por ENCIMA del dedo; si no cabe, por debajo
-  const BH     = 52;  // altura aprox. del bocadillo
-  const TAIL_H = 12;
-  const above  = cy > BH + TAIL_H + 16;
-  const by     = above
-    ? cy - BH - TAIL_H - 4   // encima
-    : cy + TAIL_H + 4;       // debajo
+  // Bocadillo: ENCIMA del dedo si hay espacio, si no debajo
+  const above = cy > BH + GAP + 20;
+  const by    = above ? cy - BH - GAP : cy + GAP;
 
   const bg     = isPast ? "rgba(8,14,28,0.97)" : "rgba(28,28,28,0.93)";
   const bcolor = isPast ? "rgba(255,255,255,0.13)" : "rgba(255,255,255,0.05)";
 
-  // La cola (triangular) sale de la esquina del bocadillo más cercana al dedo
-  // Se posiciona de forma absoluta dentro del bocadillo wrapper
-  //
-  //  goRight + above → cola en la esquina inferior-izquierda del bocadillo
-  //  goRight + below → cola en la esquina superior-izquierda
-  // !goRight + above → cola en la esquina inferior-derecha
-  // !goRight + below → cola en la esquina superior-derecha
-  const tailStyle = (() => {
-    const base = { position: "absolute", width: 0, height: 0 };
-    if (above && goRight) {
-      // cola abajo-izquierda → apunta al dedo que está abajo-izquierda
-      return { ...base, bottom: -TAIL_H, left: 14,
-        borderTop:  `${TAIL_H}px solid ${bg}`,
-        borderLeft: `${TAIL_H}px solid transparent` };
-    }
-    if (above && !goRight) {
-      // cola abajo-derecha
-      return { ...base, bottom: -TAIL_H, right: 14,
-        borderTop:   `${TAIL_H}px solid ${bg}`,
-        borderRight: `${TAIL_H}px solid transparent` };
-    }
-    if (!above && goRight) {
-      // cola arriba-izquierda → dedo está arriba-izquierda
-      return { ...base, top: -TAIL_H, left: 14,
-        borderBottom: `${TAIL_H}px solid ${bg}`,
-        borderLeft:   `${TAIL_H}px solid transparent` };
-    }
-    // !above && !goRight → cola arriba-derecha
-    return { ...base, top: -TAIL_H, right: 14,
-      borderBottom: `${TAIL_H}px solid ${bg}`,
-      borderRight:  `${TAIL_H}px solid transparent` };
-  })();
+  // ── Cola SVG dinámica ──────────────────────────────────────────────────
+  // La base de la cola va por el borde del bocadillo más cercano a la celda.
+  // La punta de la cola apunta al centro de la celda resaltada.
+  let tailPts = null;
+  if (cellRect) {
+    const cellCx = cellRect.left + cellRect.width  / 2;
+    const cellCy = cellRect.top  + cellRect.height / 2;
+
+    // Centro de la base sobre el borde del bocadillo que mira a la celda
+    const baseX = Math.max(bx + TAIL_W + 4, Math.min(bx + TW - TAIL_W - 4, cellCx));
+    const baseY = above ? by + BH : by; // borde inferior o superior del bocadillo
+
+    // Punta de la cola: borde de la celda más cercano al bocadillo
+    const tipX  = cellCx;
+    const tipY  = above ? cellRect.top + 1 : cellRect.bottom - 1;
+
+    tailPts = `${baseX - TAIL_W},${baseY} ${baseX + TAIL_W},${baseY} ${tipX},${tipY}`;
+  }
 
   return (
     <>
@@ -125,40 +108,44 @@ function CrosshairTooltip({ cx, cy, dateStr, isPast, cellRect, radius }) {
             width:  cellRect.width  + 4,
             height: cellRect.height + 4,
             borderRadius: radius + 2,
-            border: `2px solid ${isPast ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.22)"}`,
-            boxShadow: isPast ? "0 0 10px rgba(255,255,255,0.32)" : "none",
+            border: `2px solid ${isPast ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.22)"}`,
+            boxShadow: isPast ? "0 0 10px rgba(255,255,255,0.3)" : "none",
           }}
         />
       )}
 
-      {/* Bocadillo de cómic */}
+      {/* Cola SVG: triángulo con punta en la celda, base en el bocadillo */}
+      {tailPts && (
+        <svg
+          className="fixed pointer-events-none"
+          style={{ zIndex: 47, top: 0, left: 0, width: "100%", height: "100%" }}
+        >
+          <polygon points={tailPts} fill={bg} />
+        </svg>
+      )}
+
+      {/* Cuerpo del bocadillo */}
       <div
         className="fixed pointer-events-none"
-        style={{ zIndex: 49, left: bx, top: by, width: TW, position: "fixed" }}
+        style={{ zIndex: 49, left: bx, top: by, width: TW }}
       >
-        <div style={{ position: "relative" }}>
-          {/* Cola */}
-          <div style={tailStyle} />
-
-          {/* Cuerpo del bocadillo */}
-          <div style={{
-            backgroundColor: bg,
-            border: `1px solid ${bcolor}`,
-            borderRadius: 12,
-            padding: "10px 14px",
-            textAlign: "center",
-            backdropFilter: "blur(14px)",
-            WebkitBackdropFilter: "blur(14px)",
+        <div style={{
+          backgroundColor: bg,
+          border: `1px solid ${bcolor}`,
+          borderRadius: 12,
+          padding: "10px 14px",
+          textAlign: "center",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+        }}>
+          <span style={{
+            fontFamily: "'Press Start 2P', monospace",
+            fontSize: "0.72rem",
+            color: isPast ? "white" : "rgba(255,255,255,0.28)",
+            whiteSpace: "nowrap",
           }}>
-            <span style={{
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: "0.72rem",
-              color: isPast ? "white" : "rgba(255,255,255,0.28)",
-              whiteSpace: "nowrap",
-            }}>
-              {label}
-            </span>
-          </div>
+            {label}
+          </span>
         </div>
       </div>
     </>
