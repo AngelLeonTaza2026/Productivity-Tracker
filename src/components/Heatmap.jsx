@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getActiveRecord, getRecordsByYear } from "../db/index.js";
+import { THEMES } from "../themes.js";
 import EditModal from "./EditModal.jsx";
 
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
@@ -17,33 +18,19 @@ function toLocalStr(date) {
 
 function todayStr() { return toLocalStr(new Date()); }
 
-function cellClasses(record, dateStr, today) {
-  if (dateStr > today)              return "bg-neutral-900/40 cursor-default";
-  if (!record)                      return "bg-neutral-800 hover:bg-neutral-700 cursor-pointer";
-  if (record.status === "vacation") return "bg-violet-700 hover:bg-violet-600 cursor-pointer";
-  if (record.status === "rest")     return "bg-amber-500 hover:bg-amber-400 cursor-pointer";
-  if (record.status === "zero")     return "bg-red-600 hover:bg-red-500 cursor-pointer";
-  if (!record.closedAt && dateStr === today)
-    return "bg-green-900/60 ring-1 ring-green-600/50 animate-pulse cursor-pointer";
+function getCellBgColor(record, dateStr, today, t) {
+  const c = t.cells;
+  if (dateStr > today)              return c.future;
+  if (!record)                      return c.empty;
+  if (record.status === "vacation") return c.vacation;
+  if (record.status === "rest")     return c.rest;
+  if (record.status === "zero")     return c.zero;
+  if (!record.closedAt && dateStr === today) return c.todayActive;
   const h = record.hours ?? 0;
-  if (h >= 5) return "bg-green-400 hover:bg-green-300 cursor-pointer";
-  if (h >= 3) return "bg-green-600 hover:bg-green-500 cursor-pointer";
-  if (h >= 1) return "bg-green-900 hover:bg-green-800 cursor-pointer";
-  return "bg-neutral-800 hover:bg-neutral-700 cursor-pointer";
-}
-
-// Color de fondo de la celda para usar como color inicial del portal de entrada
-function getCellColor(record, dateStr, today) {
-  if (!record || dateStr > today) return "#262626"; // neutral-800
-  if (record.status === "vacation") return "#6d28d9";
-  if (record.status === "rest")     return "#f59e0b";
-  if (record.status === "zero")     return "#dc2626";
-  if (!record.closedAt && dateStr === today) return "#14532d";
-  const h = record.hours ?? 0;
-  if (h >= 5) return "#4ade80";
-  if (h >= 3) return "#16a34a";
-  if (h >= 1) return "#14532d";
-  return "#262626";
+  if (h >= 5) return c.h5;
+  if (h >= 3) return c.h3;
+  if (h >= 1) return c.h1;
+  return c.empty;
 }
 
 function computeCell() {
@@ -59,7 +46,6 @@ function computeCell() {
   return { cell: 8, gap: 1 };
 }
 
-// Resetea el zoom nativo del viewport de iOS a 1× al cerrar el modal
 function resetViewportZoom() {
   const meta = document.querySelector("meta[name=viewport]");
   if (!meta) return;
@@ -68,26 +54,31 @@ function resetViewportZoom() {
   requestAnimationFrame(() => { meta.content = orig; });
 }
 
-export default function Heatmap({ year = new Date().getFullYear(), refreshKey, onRecordChange }) {
+export default function Heatmap({
+  year = new Date().getFullYear(),
+  refreshKey,
+  onRecordChange,
+  theme = THEMES.default,
+  onThemeToggle,
+}) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
 
-  // Fases del portal de entrada: idle → in-init → in → open → out → idle
-  const [flyPhase,    setFlyPhase]    = useState("idle");
-  const [flyCellRect, setFlyCellRect] = useState(null);
+  const [flyPhase,     setFlyPhase]     = useState("idle");
+  const [flyCellRect,  setFlyCellRect]  = useState(null);
   const [flyCellColor, setFlyCellColor] = useState("#262626");
-  const [flyExpanded, setFlyExpanded] = useState(false);
+  const [flyExpanded,  setFlyExpanded]  = useState(false);
 
-  const [dims,       setDims]       = useState(() => computeCell());
-  const scrollRef  = useRef(null);
+  const [dims, setDims] = useState(() => computeCell());
+  const scrollRef   = useRef(null);
   const flyTimerRef = useRef(null);
   const today = todayStr();
 
-  const cellPx   = dims.cell;
-  const gapPx    = dims.gap;
-  const fontSize  = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
-  const radius    = Math.max(1, Math.round(cellPx * 0.1));
-  const isFlying  = flyPhase !== "idle";
+  const cellPx  = dims.cell;
+  const gapPx   = dims.gap;
+  const fontSize = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
+  const radius   = Math.max(1, Math.round(cellPx * 0.1));
+  const isFlying = flyPhase !== "idle";
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
@@ -113,7 +104,6 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     load();
   }, [year, refreshKey]);
 
-  // Dispara la expansión del clip-path después de que se pinte el estado inicial (celda pequeña)
   useEffect(() => {
     if (flyPhase !== "in-init") return;
     let raf1, raf2;
@@ -124,16 +114,13 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
         flyTimerRef.current = setTimeout(() => setFlyPhase("open"), 520);
       });
     });
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   }, [flyPhase]);
 
   function handleCellClick(dateStr, e) {
     if (dateStr > today || flyPhase !== "idle") return;
     const rect  = e.currentTarget.getBoundingClientRect();
-    const color = getCellColor(recordMap[dateStr], dateStr, today);
+    const color = getCellBgColor(recordMap[dateStr], dateStr, today, theme);
     setSelectedDate(dateStr);
     setFlyCellRect(rect);
     setFlyCellColor(color);
@@ -157,18 +144,13 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
   function handleSaved() { onRecordChange?.(); flyOut(); }
   function handleClose() { flyOut(); }
 
-  // Calcula el clip-path según si el portal está expandido o no
   const clipPath = (() => {
     if (flyExpanded) return "inset(0px round 0px)";
     if (!flyCellRect) return "inset(0px)";
     const { top, right, bottom, left } = flyCellRect;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const t = Math.max(0, top);
-    const r = Math.max(0, vw - right);
-    const b = Math.max(0, vh - bottom);
-    const l = Math.max(0, left);
-    return `inset(${t}px ${r}px ${b}px ${l}px round ${radius}px)`;
+    return `inset(${Math.max(0,top)}px ${Math.max(0,vw-right)}px ${Math.max(0,vh-bottom)}px ${Math.max(0,left)}px round ${radius}px)`;
   })();
 
   const gridStyle = {
@@ -185,8 +167,8 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     rows.push(
       <div
         key={`mh-${mi}`}
-        className="text-center text-neutral-600 select-none"
-        style={{ lineHeight: `${cellPx}px`, fontSize }}
+        className="text-center select-none"
+        style={{ lineHeight: `${cellPx}px`, fontSize, color: theme.labelColor }}
       >
         {initial}
       </div>
@@ -197,8 +179,8 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     rows.push(
       <div
         key={`dl-${day}`}
-        className="text-right text-neutral-700 select-none pr-px"
-        style={{ lineHeight: `${cellPx}px`, width: LABEL_W, fontSize }}
+        className="text-right select-none pr-px"
+        style={{ lineHeight: `${cellPx}px`, width: LABEL_W, fontSize, color: theme.labelColor }}
       >
         {day}
       </div>
@@ -208,28 +190,33 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
       const valid   = day <= daysInMonth(year, month);
       const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const isToday = dateStr === today;
+      const isFuture = dateStr > today;
 
       if (!valid) {
         rows.push(
           <div
             key={`${month}-${day}`}
-            className="bg-neutral-900/50"
-            style={{ width: cellPx, height: cellPx, borderRadius: radius }}
+            style={{ width: cellPx, height: cellPx, borderRadius: radius, backgroundColor: theme.cells.future }}
           />
         );
         continue;
       }
 
       const record = recordMap[dateStr];
+      const bgColor = getCellBgColor(record, dateStr, today, theme);
+      const isActivePulse = !record?.closedAt && isToday;
+
       rows.push(
         <button
           key={`${month}-${day}`}
           onClick={(e) => handleCellClick(dateStr, e)}
           className={[
-            cellClasses(record, dateStr, today),
-            isToday ? "ring-1 ring-white/30" : "",
+            "transition-opacity",
+            isFuture ? "cursor-default" : "cursor-pointer active:opacity-60",
+            isActivePulse ? "animate-pulse" : "",
+            isToday && !isFuture ? "ring-1 ring-white/20" : "",
           ].join(" ")}
-          style={{ width: cellPx, height: cellPx, borderRadius: radius }}
+          style={{ width: cellPx, height: cellPx, borderRadius: radius, backgroundColor: bgColor }}
           aria-label={dateStr}
           title={dateStr}
         />
@@ -237,9 +224,59 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
     }
   }
 
+  // ── Panel lateral: decoración según tema ─────────────────────────────────
+  const SideLeft = theme.id === "bear" ? (
+    <div
+      className="absolute select-none pointer-events-none"
+      style={{
+        left: 6,
+        top: "50%",
+        transform: "translateY(-50%) rotate(180deg)",
+        writingMode: "vertical-rl",
+        textOrientation: "mixed",
+      }}
+    >
+      <span style={{
+        fontFamily: "'Press Start 2P', monospace",
+        fontSize: "0.24rem",
+        letterSpacing: "0.35em",
+        color: "rgba(96,165,250,0.18)",
+      }}>
+        EVERY SECOND COUNTS
+      </span>
+    </div>
+  ) : null;
+
+  const SideRight = (
+    <button
+      onClick={onThemeToggle}
+      className="absolute select-none"
+      style={{
+        right: 6,
+        top: "50%",
+        transform: "translateY(-50%)",
+        writingMode: "vertical-rl",
+        textOrientation: "mixed",
+        padding: "10px 3px",
+        background: "transparent",
+        border: "none",
+        cursor: "pointer",
+      }}
+      aria-label={`Cambiar a tema ${theme.label}`}
+    >
+      <span style={{
+        fontFamily: "'Press Start 2P', monospace",
+        fontSize: "0.24rem",
+        letterSpacing: "0.3em",
+        color: theme.toggleColor,
+      }}>
+        {theme.label}
+      </span>
+    </button>
+  );
+
   return (
     <div className="w-full h-full">
-      {/* Scroll container: pull-to-reveal año */}
       <div
         ref={scrollRef}
         className="wheel-scroll"
@@ -251,6 +288,7 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
           scrollSnapType: "y mandatory",
           WebkitOverflowScrolling: "touch",
           overscrollBehavior: "contain",
+          backgroundColor: theme.bg,
         }}
       >
         {/* Sección del año (pull-to-reveal) */}
@@ -262,12 +300,12 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
             alignItems: "flex-end",
             justifyContent: "center",
             paddingBottom: 14,
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            borderBottom: `1px solid ${theme.dividerColor}`,
           }}
         >
           <span
             className="select-none font-mono text-sm tracking-[0.35em]"
-            style={{ color: "rgba(255,255,255,0.28)" }}
+            style={{ color: theme.yearColor }}
           >
             {year}
           </span>
@@ -281,31 +319,29 @@ export default function Heatmap({ year = new Date().getFullYear(), refreshKey, o
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            position: "relative",
           }}
         >
+          {SideLeft}
           <div style={gridStyle}>{rows}</div>
+          {SideRight}
         </div>
       </div>
 
-      {/*
-        Portal de entrada: clip-path que empieza en la celda tocada y
-        se expande hasta llenar la pantalla. El color de fondo va
-        del color de la celda al negro del app mientras se expande.
-      */}
+      {/* Portal de entrada: clip-path desde la celda hasta full-screen */}
       {isFlying && (
         <div
           className="fixed inset-0 z-40"
           style={{
-            backgroundColor: flyExpanded ? "#0a0a0a" : flyCellColor,
+            backgroundColor: flyExpanded ? theme.bg : flyCellColor,
             clipPath,
             transition: (flyPhase === "in" || flyPhase === "out")
-              ? "clip-path 0.52s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.45s ease"
+              ? "clip-path 0.52s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease"
               : "none",
           }}
         />
       )}
 
-      {/* Modal — aparece recién cuando el portal está completamente abierto */}
       {flyPhase === "open" && selectedDate && (
         <EditModal
           date={selectedDate}
