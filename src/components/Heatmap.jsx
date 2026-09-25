@@ -418,9 +418,10 @@ export default function Heatmap({
         continue;
       }
 
-      const record  = recordMap[dateStr];
-      const bgColor = getCellBgColor(record, dateStr, today, theme);
-      const isPulse = !record?.closedAt && isToday;
+      const record     = recordMap[dateStr];
+      const bgColor    = getCellBgColor(record, dateStr, today, theme);
+      const isPulse    = !record?.closedAt && isToday;
+      const isVacation = record?.status === "vacation";
 
       rows.push(
         <button
@@ -428,7 +429,7 @@ export default function Heatmap({
           data-date={dateStr}
           onClick={(e) => handleCellClick(dateStr, e)}
           className={[
-            "transition-opacity",
+            "transition-opacity flex items-center justify-center",
             isFuture ? "cursor-default" : "cursor-pointer active:opacity-60",
             isPulse ? "animate-pulse" : "",
             isToday && !isFuture ? "ring-1 ring-white/20" : "",
@@ -436,7 +437,21 @@ export default function Heatmap({
           style={{ width: cellPx, height: cellPx, borderRadius: radius, backgroundColor: bgColor }}
           aria-label={dateStr}
           title={dateStr}
-        />
+        >
+          {isVacation && (
+            <span
+              className="select-none pointer-events-none"
+              style={{
+                fontSize: Math.max(6, Math.round(cellPx * 0.5)),
+                lineHeight: 1,
+                fontWeight: 700,
+                color: "rgba(255,255,255,0.85)",
+              }}
+            >
+              V
+            </span>
+          )}
+        </button>
       );
     }
   }
