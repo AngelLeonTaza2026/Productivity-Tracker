@@ -95,15 +95,21 @@ explícitamente feature por feature**, aunque parezca una buena idea en el momen
 - ✅ **[YA CONSTRUIDO] Estética visual inspirada en la serie "The Bear"**: sistema de temas
   implementado (`themes.js`) con paleta de colores y tipografía con carácter. Referencia visual:
   el cartel "EVERY SECOND COUNTS".
-- ⬜ **[PENDIENTE — no construir sin pedirlo] Modo enfoque minimalista**: mientras el timer corre, ocultar el resto de la interfaz (menú,
-  heatmap, botones) y mostrar únicamente el indicador visual de "corriendo" a pantalla completa.
-  Refuerza la idea de no ver el marcador de tiempo ni distracciones alrededor.
-- ⬜ **[PENDIENTE — no construir sin pedirlo] Frases al cerrar el día**: al confirmar el cierre de
-  un día, mostrar una frase corta motivacional aleatoria de un array local (sin API externa ni
-  conexión a internet), estilo "cada segundo cuenta".
-- ⬜ **[PENDIENTE — no construir sin pedirlo] Exportar vista anual como imagen**: botón para
-  exportar el heatmap anual completo como imagen (PNG), para poder guardarla o compartirla — el
-  equivalente digital a la hoja impresa que usaba antes.
+- ✅ **[YA CONSTRUIDO] Modo enfoque minimalista**: al presionar "Iniciar" entra automático a
+  pantalla completa (`FocusMode.jsx`) — solo el punto verde pulsante, sin menú/heatmap/fecha. Tocar
+  la pantalla revela "Pausar" con fade, se oculta solo a los pocos segundos. Pausar sale del modo
+  enfoque. Sigue basado en `startedAt`/Dexie, no en un contador visual — sobrevive bloqueo de
+  pantalla vía Page Visibility API.
+- ✅ **[YA CONSTRUIDO] Frases al cerrar el día**: al confirmar el cierre (`ClosingPhrase.jsx`),
+  frase corta al azar según el resultado del día (`phrases.js` — productivo / cero / descanso o
+  vacaciones), fade-in suave, se oculta sola o al tocar la pantalla.
+- ✅ **[YA CONSTRUIDO, con más alcance del planeado] Exportar vista anual como imagen**: botón que
+  abre un panel (`ExportPanel.jsx`) para elegir un marco antes de descargar `productividad-{año}.png`.
+  Terminó incluyendo más de lo que decía originalmente este ítem — 4 marcos: Simple (el PNG plano
+  que se había planeado), y 3 con imágenes reales provistas por mí (`src/assets/frames/`): Harvard,
+  Gótico, Elegante. Esto se pidió y se confirmó explícitamente en la sesión, no fue iniciativa propia
+  de Claude — pero como excede bastante el alcance original del ítem, queda anotado acá para que el
+  spec no vuelva a quedar desactualizado.
 
 ## Repositorio / GitHub
 
