@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { toPng } from "html-to-image";
 import { getActiveRecord, getRecordsByYear } from "../db/index.js";
 import { THEMES } from "../themes.js";
+import { composeExportCanvas, preloadFrameFont } from "../frames.js";
 import EditModal from "./EditModal.jsx";
+import ExportPanel from "./ExportPanel.jsx";
 
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
 const MONTH_SHORT    = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -45,6 +48,60 @@ function computeCell() {
     if (w <= availW && h <= availH) return { cell: c, gap: g };
   }
   return { cell: 8, gap: 1 };
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+const EXPORT_SCALE   = 3;
+const EXPORT_TITLE_H = 52; // banda del título, en px CSS antes de EXPORT_SCALE
+const EXPORT_MARGIN  = 20; // margen a los 4 lados, en px CSS antes de EXPORT_SCALE
+
+/**
+ * Captura solo el grid (no los paneles laterales interactivos), le agrega
+ * margen real en los 4 lados (antes el borde derecho/inferior de la imagen
+ * quedaba pegado al final de la tabla) y compone el marco + título elegidos
+ * aparte por canvas — así no hay que tocar el DOM en vivo para nada de esto.
+ */
+async function exportHeatmapAsImage(gridEl, year, bgColor, frameId) {
+  await document.fonts?.ready;
+  await preloadFrameFont(frameId);
+
+  const gridDataUrl = await toPng(gridEl, {
+    backgroundColor: bgColor,
+    pixelRatio: EXPORT_SCALE,
+  });
+  const gridImg = await loadImage(gridDataUrl);
+
+  const margin = EXPORT_MARGIN * EXPORT_SCALE;
+  const titleH = EXPORT_TITLE_H * EXPORT_SCALE;
+
+  const canvas = await composeExportCanvas(frameId, {
+    gridImg, year, bg: bgColor, scale: EXPORT_SCALE, margin, titleH,
+  });
+
+  const a = document.createElement("a");
+  a.href = canvas.toDataURL("image/png");
+  a.download = `productividad-${year}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="M7 10l5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
+  );
 }
 
 function resetViewportZoom() {
@@ -162,6 +219,12 @@ export default function Heatmap({
 }) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // Exportar como imagen
+  const gridRef = useRef(null);
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exporting,   setExporting]   = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   // Portal de entrada (fly-in)
   const [flyPhase,     setFlyPhase]    = useState("idle");
@@ -361,6 +424,21 @@ export default function Heatmap({
   function handleSaved() { onRecordChange?.(); flyOut(); }
   function handleClose() { flyOut(); }
 
+  async function handleExport(frameId) {
+    if (exporting || !gridRef.current) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      await exportHeatmapAsImage(gridRef.current, year, theme.bg, frameId);
+      setExportPanelOpen(false);
+    } catch (err) {
+      console.error("Error exportando heatmap:", err);
+      setExportError("No se pudo exportar la imagen");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const clipPath = (() => {
     if (flyExpanded) return "inset(0px round 0px)";
     if (!flyCellRect) return "inset(0px)";
@@ -554,7 +632,7 @@ export default function Heatmap({
           }}
         >
           {SideLeft}
-          <div style={gridStyle}>{rows}</div>
+          <div ref={gridRef} style={gridStyle}>{rows}</div>
           {SideRight}
         </div>
       </div>
@@ -592,6 +670,36 @@ export default function Heatmap({
           isPast={crosshair.info.isPast}
           cellRect={crosshair.info.rect}
           radius={radius}
+        />
+      )}
+
+      {/* Exportar vista anual como imagen */}
+      {!isFlying && (
+        <button
+          onClick={() => setExportPanelOpen(true)}
+          aria-label="Exportar como imagen"
+          className="fixed select-none"
+          style={{
+            top: "max(14px, env(safe-area-inset-top))",
+            right: 14,
+            zIndex: 30,
+            padding: 8,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: theme.toggleColor,
+          }}
+        >
+          <DownloadIcon />
+        </button>
+      )}
+
+      {exportPanelOpen && (
+        <ExportPanel
+          onCancel={() => { setExportPanelOpen(false); setExportError(null); }}
+          onExport={handleExport}
+          exporting={exporting}
+          error={exportError}
         />
       )}
     </div>
