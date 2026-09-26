@@ -21,6 +21,18 @@ export function useTimer() {
     });
   }, []);
 
+  // Al volver de background (pantalla bloqueada, cambio de app), releer el
+  // estado real desde Dexie — el timer sigue corriendo por timestamp, esto
+  // solo resincroniza isRunning, no cuenta segundos en pantalla.
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      getTimerState().then((state) => setIsRunning(state.isRunning));
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
   const start = useCallback(async () => {
     await startTimer();
     setIsRunning(true);

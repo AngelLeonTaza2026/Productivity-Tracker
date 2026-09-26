@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useTimer } from "../hooks/useTimer.js";
 import { getTotalSeconds, resetTimer } from "../db/timer.js";
 import { formatRaw } from "../utils/time.js";
 
 const REVEAL_DURATION_MS = 10000;
 
-export default function Timer() {
-  const { isRunning, loading, start, pause } = useTimer();
+// Recibe el timer como prop (en vez de llamar a useTimer() acá) para que
+// comparta el mismo estado que FocusMode.jsx — ambos reaccionan al mismo
+// isRunning sin duplicar el hook.
+export default function Timer({ timer }) {
+  const { isRunning, loading, start, pause } = timer;
 
   // ── Reveal de emergencia ──────────────────────────────────────────────────
   const [revealed, setRevealed] = useState(false);
