@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
 const CONTROLS_HIDE_DELAY_MS = 3000;
+const PAUSE_COLOR = "#b56b4a"; // terracota apagada — "pausa", no "alarma"
+
+function PauseIcon() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
 
 /**
  * Overlay de pantalla completa que se activa mientras el timer corre.
@@ -45,14 +55,14 @@ export default function FocusMode({ isRunning, onPause }) {
 
       <button
         onClick={handlePause}
+        aria-label="Pausar"
         className={[
-          "absolute px-10 py-3 rounded-full bg-neutral-800 text-neutral-200 text-sm font-medium",
-          "tracking-widest uppercase transition-opacity duration-300",
+          "absolute p-4 transition-opacity duration-300",
           controlsVisible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         ].join(" ")}
-        style={{ bottom: "calc(6rem + env(safe-area-inset-bottom))" }}
+        style={{ bottom: "calc(5rem + env(safe-area-inset-bottom))", color: PAUSE_COLOR }}
       >
-        Pausar
+        <PauseIcon />
       </button>
     </div>
   );
