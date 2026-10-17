@@ -11,12 +11,16 @@ import {
  */
 export function useTimer() {
   const [isRunning, setIsRunning] = useState(false);
+  // No es el tiempo en sí (eso nunca se expone) — solo si el timer ya se
+  // inició alguna vez hoy, para distinguir "Iniciar" de "Continuar".
+  const [hasAccumulated, setHasAccumulated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Lee el estado persisitido al montar (sobrevive a recarga de página)
   useEffect(() => {
     getTimerState().then((state) => {
       setIsRunning(state.isRunning);
+      setHasAccumulated(state.accumulatedSeconds > 0);
       setLoading(false);
     });
   }, []);
@@ -27,7 +31,10 @@ export function useTimer() {
   useEffect(() => {
     function onVisibilityChange() {
       if (document.visibilityState !== "visible") return;
-      getTimerState().then((state) => setIsRunning(state.isRunning));
+      getTimerState().then((state) => {
+        setIsRunning(state.isRunning);
+        setHasAccumulated(state.accumulatedSeconds > 0);
+      });
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -41,7 +48,8 @@ export function useTimer() {
   const pause = useCallback(async () => {
     await pauseTimer();
     setIsRunning(false);
+    setHasAccumulated(true);
   }, []);
 
-  return { isRunning, loading, start, pause };
+  return { isRunning, hasAccumulated, loading, start, pause };
 }

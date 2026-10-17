@@ -27,6 +27,20 @@ function DateBadge({ children }) {
   );
 }
 
+// Esquina inferior izquierda — opuesta a la fecha, con margen para no quedar
+// pegado al borde ni al botón principal del timer.
+function CloseDayButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="fixed px-8 py-2 rounded-full bg-slate-700 text-slate-100 text-xs tracking-widest uppercase hover:bg-slate-600 transition-all duration-200"
+      style={{ bottom: "max(28px, calc(16px + env(safe-area-inset-bottom)))", left: 24, zIndex: 20 }}
+    >
+      Cerrar día
+    </button>
+  );
+}
+
 export default function DayFlow({ onDayChange }) {
   const {
     activeRecord,
@@ -91,14 +105,9 @@ export default function DayFlow({ onDayChange }) {
       <>
         <div className="flex flex-col items-center gap-12">
           <Timer timer={timer} />
-
-          <button
-            onClick={requestClose}
-            className="px-8 py-2 rounded-full bg-slate-700 text-slate-100 text-xs tracking-widest uppercase hover:bg-slate-600 transition-all duration-200"
-          >
-            Cerrar día
-          </button>
         </div>
+
+        <CloseDayButton onClick={requestClose} />
 
         <DateBadge>
           {new Date(`${activeRecord.date}T00:00:00`).toLocaleDateString("es", {

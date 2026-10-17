@@ -8,7 +8,7 @@ const REVEAL_DURATION_MS = 10000;
 // comparta el mismo estado que FocusMode.jsx — ambos reaccionan al mismo
 // isRunning sin duplicar el hook.
 export default function Timer({ timer }) {
-  const { isRunning, loading, start, pause } = timer;
+  const { isRunning, hasAccumulated, loading, start, pause } = timer;
 
   // ── Reveal de emergencia ──────────────────────────────────────────────────
   const [revealed, setRevealed] = useState(false);
@@ -84,7 +84,7 @@ export default function Timer({ timer }) {
             : "bg-green-600 text-white hover:bg-green-500",
         ].join(" ")}
       >
-        {isRunning ? "Pausar" : "Iniciar"}
+        {isRunning ? "Pausar" : hasAccumulated ? "Continuar" : "Iniciar"}
       </button>
     </div>
   );
