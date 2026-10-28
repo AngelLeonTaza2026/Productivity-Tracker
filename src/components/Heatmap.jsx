@@ -49,20 +49,39 @@ const EXPORT_SCALE   = 3;
 const EXPORT_TITLE_H = 52; // banda del título, en px CSS antes de EXPORT_SCALE
 const EXPORT_MARGIN  = 20; // margen a los 4 lados, en px CSS antes de EXPORT_SCALE
 
+// Presentación 3D ambiente de la mesa — inclinación fija, sutil, de "estar
+// mirando la tabla desde arriba", no un dial que el usuario pueda girar
+// (eso chocaría con el scroll y el crosshair de mantener presionado).
+const TABLE_TILT_DEG = 9;
+const TABLE_PERSPECTIVE = 1400;
+
+// Coreografía del aterrizaje (estilo "lista negra" de carreras): primero se
+// ve la mesa entera, después la cámara se acerca a la celda, pinta, y vuelve.
+const LAND_FADE_MS  = 500; // el color de pantalla completa se desvanece
+const LAND_ZOOM_MS  = 650; // la cámara se acerca a la celda
+const LAND_PAINT_MS = 550; // pausa + resalte sobre la celda
+const LAND_OUT_MS   = 650; // vuelve a la vista de reposo
+
 /**
  * Captura solo el grid (no los paneles laterales interactivos), le agrega
  * margen real en los 4 lados (antes el borde derecho/inferior de la imagen
  * quedaba pegado al final de la tabla) y compone el marco + título elegidos
  * aparte por canvas — así no hay que tocar el DOM en vivo para nada de esto.
+ * `tableEl` es el contenedor con la inclinación 3D: se neutraliza un
+ * instante para la captura, porque html-to-image no interpreta bien un
+ * ancestro con transform 3D, y se restaura apenas termina.
  */
-async function exportHeatmapAsImage(gridEl, year, bgColor, frameId) {
+async function exportHeatmapAsImage(tableEl, gridEl, year, bgColor, frameId) {
   await document.fonts?.ready;
   await preloadFrameFont(frameId);
+
+  const prevTransform = tableEl.style.transform;
+  tableEl.style.transform = "none";
 
   const gridDataUrl = await toPng(gridEl, {
     backgroundColor: bgColor,
     pixelRatio: EXPORT_SCALE,
-  });
+  }).finally(() => { tableEl.style.transform = prevTransform; });
   const gridImg = await loadImage(gridDataUrl);
 
   const margin = EXPORT_MARGIN * EXPORT_SCALE;
@@ -214,11 +233,17 @@ export default function Heatmap({
   const [exporting,   setExporting]   = useState(false);
   const [exportError, setExportError] = useState(null);
 
-  // Portal de entrada (fly-in)
+  // Portal de entrada (fly-in) — edición de una celda pasada
   const [flyPhase,     setFlyPhase]    = useState("idle");
   const [flyCellRect,  setFlyCellRect] = useState(null);
   const [flyCellColor, setFlyCellColor] = useState("#262626");
   const [flyExpanded,  setFlyExpanded] = useState(false);
+
+  // Aterrizaje desde el ritual de cierre de día — cámara que se acerca a
+  // la celda sobre la mesa ya inclinada, en vez de un portal plano
+  const [zoom, setZoom] = useState({ scale: 1, originX: 50, originY: 50 });
+  const [landFade, setLandFade] = useState(false); // color de pantalla completa → transparente
+  const [landRing, setLandRing] = useState(null);  // rect de la celda, solo durante "land-paint"
 
   // Crosshair (mantener presionado + arrastrar)
   const [crosshair, setCrosshair] = useState(null);
@@ -251,7 +276,7 @@ export default function Heatmap({
   const fontSize = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
   const radius   = Math.max(1, Math.round(cellPx * 0.1));
   const isFlying = flyPhase !== "idle";
-  const isLanding = flyPhase === "land-init" || flyPhase === "landing" || flyPhase === "landed";
+  const isLanding = flyPhase.startsWith("land-");
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
@@ -291,44 +316,49 @@ export default function Heatmap({
     return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
   }, [flyPhase]);
 
-  // Aterrizaje desde el ritual de cierre de día: arranca pantalla completa
-  // con el color del resultado y se achica hasta la celda real de hoy —
-  // mismo mecanismo del portal, pero en reversa y sin abrir el EditModal.
+  // Aterrizaje desde el ritual de cierre de día — coreografía en 4 tiempos:
+  // 1) se ve la mesa entera (el color de pantalla completa se desvanece)
+  // 2) la cámara se acerca a la celda (zoom sobre la mesa ya inclinada)
+  // 3) pausa + resalte sobre la celda (acá "se pinta" el día)
+  // 4) vuelve a la vista de reposo
   useEffect(() => {
     if (!landing) return;
-    const raf = requestAnimationFrame(() => {
-      const el = document.querySelector(`button[data-date="${landing.date}"]`);
-      if (!el) { onLandingDone?.(); return; }
-      setFlyCellRect(el.getBoundingClientRect());
-      setFlyCellColor(landing.color);
-      setSelectedDate(null);
-      setFlyExpanded(true);
-      setFlyPhase("land-init");
-    });
-    return () => cancelAnimationFrame(raf);
+    setFlyCellColor(landing.color);
+    setLandFade(true);
+    setFlyPhase("land-wide");
+    const raf1 = requestAnimationFrame(() => requestAnimationFrame(() => setLandFade(false)));
+    flyTimerRef.current = setTimeout(() => startLandZoomIn(landing.date), LAND_FADE_MS);
+    return () => { cancelAnimationFrame(raf1); clearTimeout(flyTimerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landing]);
 
-  useEffect(() => {
-    if (flyPhase !== "land-init") return;
-    let r1, r2;
-    r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => {
-        setFlyExpanded(false); // se achica de pantalla completa hasta la celda
-        setFlyPhase("landing");
+  function startLandZoomIn(date) {
+    const tableEl = scrollRef.current;
+    const cellEl  = document.querySelector(`button[data-date="${date}"]`);
+    if (!tableEl || !cellEl) { onLandingDone?.(); return; }
+
+    const tableRect = tableEl.getBoundingClientRect();
+    const cellRect   = cellEl.getBoundingClientRect();
+    const originX = ((cellRect.left + cellRect.width / 2 - tableRect.left) / tableRect.width) * 100;
+    const originY = ((cellRect.top + cellRect.height / 2 - tableRect.top) / tableRect.height) * 100;
+
+    setZoom({ scale: 2.6, originX, originY });
+    setFlyPhase("land-zoom-in");
+    flyTimerRef.current = setTimeout(() => {
+      setLandRing(cellEl.getBoundingClientRect());
+      setFlyPhase("land-paint");
+      flyTimerRef.current = setTimeout(() => {
+        setLandRing(null);
+        setZoom((z) => ({ ...z, scale: 1 }));
+        setFlyPhase("land-zoom-out");
         flyTimerRef.current = setTimeout(() => {
-          setFlyPhase("landed"); // breve resalte sobre la celda real
-          flyTimerRef.current = setTimeout(() => {
-            setFlyPhase("idle");
-            setFlyCellRect(null);
-            onLandingDone?.();
-          }, 900);
-        }, 520);
-      });
-    });
-    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyPhase]);
+          setFlyPhase("idle");
+          setZoom({ scale: 1, originX: 50, originY: 50 });
+          onLandingDone?.();
+        }, LAND_OUT_MS);
+      }, LAND_PAINT_MS);
+    }, LAND_ZOOM_MS);
+  }
 
   // ── Handlers imperativos para crosshair (touchmove/end no-pasivos) ────
   useEffect(() => {
@@ -453,11 +483,11 @@ export default function Heatmap({
   function handleClose() { flyOut(); }
 
   async function handleExport(frameId) {
-    if (exporting || !gridRef.current) return;
+    if (exporting || !gridRef.current || !scrollRef.current) return;
     setExporting(true);
     setExportError(null);
     try {
-      await exportHeatmapAsImage(gridRef.current, year, theme.bg, frameId);
+      await exportHeatmapAsImage(scrollRef.current, gridRef.current, year, theme.bg, frameId);
       setExportPanelOpen(false);
     } catch (err) {
       console.error("Error exportando heatmap:", err);
@@ -611,23 +641,39 @@ export default function Heatmap({
     </button>
   );
 
+  const isZooming = flyPhase === "land-zoom-in" || flyPhase === "land-zoom-out";
+
   return (
     <div className="w-full h-full">
-      {/* Scroll container — pull-to-reveal año + snap */}
-      <div
-        ref={scrollRef}
-        className="wheel-scroll"
-        style={{
-          width: "100%",
-          height: "100%",
-          overflowY: isFlying ? "hidden" : "scroll",
-          overflowX: "hidden",
-          scrollSnapType: "y mandatory",
-          WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "contain",
-          backgroundColor: theme.bg,
-        }}
-      >
+      {/*
+        Envoltorio de perspectiva — SOLO para la mesa (scroll + grid), nunca
+        para los hermanos `fixed` (portal, modal, tooltip, botón exportar):
+        tanto `perspective` como `transform` convierten a su elemento en el
+        "contenedor" de los descendientes `fixed`, así que si envolviera todo
+        el componente les movería la posición. Por eso este div solo tiene
+        un hijo: el contenedor de scroll.
+      */}
+      <div style={{ width: "100%", height: "100%", perspective: `${TABLE_PERSPECTIVE}px` }}>
+        {/* Scroll container — pull-to-reveal año + snap + mesa inclinada en 3D */}
+        <div
+          ref={scrollRef}
+          className="wheel-scroll"
+          style={{
+            width: "100%",
+            height: "100%",
+            overflowY: isFlying ? "hidden" : "scroll",
+            overflowX: "hidden",
+            scrollSnapType: "y mandatory",
+            WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
+            backgroundColor: theme.bg,
+            transform: `rotateX(${TABLE_TILT_DEG}deg) scale(${zoom.scale})`,
+            transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
+            transition: isZooming
+              ? `transform ${flyPhase === "land-zoom-in" ? LAND_ZOOM_MS : LAND_OUT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+              : "none",
+          }}
+        >
         {/* Sección del año (pull-to-reveal) */}
         <div
           style={{
@@ -663,38 +709,53 @@ export default function Heatmap({
           <div ref={gridRef} style={gridStyle}>{rows}</div>
           {SideRight}
         </div>
+        </div>
       </div>
 
-      {/* Portal de entrada/salida (clip-path desde celda hasta full-screen) —
-          en modo aterrizaje el color se queda fijo en el del resultado, no
-          pasa a theme.bg, porque lo que se ve es el color "cayendo" en su
-          celda, no el fondo de la app revelándose. */}
-      {isFlying && (
+      {/* Portal de entrada/salida al editar una celda pasada (clip-path
+          desde la celda hasta pantalla completa) — no interviene durante
+          el aterrizaje, que usa su propia coreografía más abajo. */}
+      {isFlying && !isLanding && (
         <div
           className="fixed inset-0 z-40"
           style={{
-            backgroundColor: isLanding ? flyCellColor : (flyExpanded ? theme.bg : flyCellColor),
+            backgroundColor: flyExpanded ? theme.bg : flyCellColor,
             clipPath,
-            transition: (flyPhase === "in" || flyPhase === "out" || flyPhase === "landing")
+            transition: (flyPhase === "in" || flyPhase === "out")
               ? "clip-path 0.52s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease"
               : "none",
           }}
         />
       )}
 
-      {/* Resalte breve sobre la celda real justo al aterrizar */}
-      {flyPhase === "landed" && flyCellRect && (
+      {/* Aterrizaje, tiempo 1: el color de pantalla completa se desvanece,
+          revelando la mesa entera ya inclinada (no se "cae" sobre la celda
+          todavía, eso es el tiempo 2). */}
+      {flyPhase === "land-wide" && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{
+            backgroundColor: flyCellColor,
+            opacity: landFade ? 1 : 0,
+            transition: `opacity ${LAND_FADE_MS}ms ease`,
+          }}
+        />
+      )}
+
+      {/* Aterrizaje, tiempo 3: resalte sobre la celda real mientras la
+          cámara está acercada — acá "se pinta" el día. */}
+      {flyPhase === "land-paint" && landRing && (
         <div
           className="fixed pointer-events-none z-40"
           style={{
-            left: flyCellRect.left - 3,
-            top: flyCellRect.top - 3,
-            width: flyCellRect.width + 6,
-            height: flyCellRect.height + 6,
+            left: landRing.left - 3,
+            top: landRing.top - 3,
+            width: landRing.width + 6,
+            height: landRing.height + 6,
             borderRadius: radius + 3,
             border: `2px solid ${flyCellColor}`,
             boxShadow: `0 0 14px ${flyCellColor}`,
-            animation: "closing-ring 900ms ease-out forwards",
+            animation: `closing-ring ${LAND_PAINT_MS}ms ease-out forwards`,
           }}
         />
       )}
