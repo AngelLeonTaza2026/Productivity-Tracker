@@ -20,3 +20,15 @@ body {
   from { opacity: 0; transform: scale(0.72); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* Suspenso previo al revelado del resultado del día */
+@keyframes closing-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50%      { transform: scale(1.6); opacity: 1; }
+}
+
+/* Anillo que se expande y desaparece justo cuando se revela el resultado */
+@keyframes closing-ring {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
