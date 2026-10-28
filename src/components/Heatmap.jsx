@@ -202,6 +202,8 @@ export default function Heatmap({
   onRecordChange,
   theme = THEMES.default,
   onThemeToggle,
+  landing,      // { date, color } | null — aterrizaje desde el ritual de cierre de día
+  onLandingDone,
 }) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
@@ -249,6 +251,7 @@ export default function Heatmap({
   const fontSize = Math.max(7, Math.min(10, Math.floor(cellPx * 0.52)));
   const radius   = Math.max(1, Math.round(cellPx * 0.1));
   const isFlying = flyPhase !== "idle";
+  const isLanding = flyPhase === "land-init" || flyPhase === "landing" || flyPhase === "landed";
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
@@ -274,7 +277,7 @@ export default function Heatmap({
     load();
   }, [year, refreshKey]);
 
-  // Trigger de la expansión del portal
+  // Trigger de la expansión del portal (entrando a editar una celda)
   useEffect(() => {
     if (flyPhase !== "in-init") return;
     let r1, r2;
@@ -286,6 +289,45 @@ export default function Heatmap({
       });
     });
     return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
+  }, [flyPhase]);
+
+  // Aterrizaje desde el ritual de cierre de día: arranca pantalla completa
+  // con el color del resultado y se achica hasta la celda real de hoy —
+  // mismo mecanismo del portal, pero en reversa y sin abrir el EditModal.
+  useEffect(() => {
+    if (!landing) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector(`button[data-date="${landing.date}"]`);
+      if (!el) { onLandingDone?.(); return; }
+      setFlyCellRect(el.getBoundingClientRect());
+      setFlyCellColor(landing.color);
+      setSelectedDate(null);
+      setFlyExpanded(true);
+      setFlyPhase("land-init");
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landing]);
+
+  useEffect(() => {
+    if (flyPhase !== "land-init") return;
+    let r1, r2;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => {
+        setFlyExpanded(false); // se achica de pantalla completa hasta la celda
+        setFlyPhase("landing");
+        flyTimerRef.current = setTimeout(() => {
+          setFlyPhase("landed"); // breve resalte sobre la celda real
+          flyTimerRef.current = setTimeout(() => {
+            setFlyPhase("idle");
+            setFlyCellRect(null);
+            onLandingDone?.();
+          }, 900);
+        }, 520);
+      });
+    });
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyPhase]);
 
   // ── Handlers imperativos para crosshair (touchmove/end no-pasivos) ────
@@ -623,16 +665,36 @@ export default function Heatmap({
         </div>
       </div>
 
-      {/* Portal de entrada (clip-path desde celda hasta full-screen) */}
+      {/* Portal de entrada/salida (clip-path desde celda hasta full-screen) —
+          en modo aterrizaje el color se queda fijo en el del resultado, no
+          pasa a theme.bg, porque lo que se ve es el color "cayendo" en su
+          celda, no el fondo de la app revelándose. */}
       {isFlying && (
         <div
           className="fixed inset-0 z-40"
           style={{
-            backgroundColor: flyExpanded ? theme.bg : flyCellColor,
+            backgroundColor: isLanding ? flyCellColor : (flyExpanded ? theme.bg : flyCellColor),
             clipPath,
-            transition: (flyPhase === "in" || flyPhase === "out")
+            transition: (flyPhase === "in" || flyPhase === "out" || flyPhase === "landing")
               ? "clip-path 0.52s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.4s ease"
               : "none",
+          }}
+        />
+      )}
+
+      {/* Resalte breve sobre la celda real justo al aterrizar */}
+      {flyPhase === "landed" && flyCellRect && (
+        <div
+          className="fixed pointer-events-none z-40"
+          style={{
+            left: flyCellRect.left - 3,
+            top: flyCellRect.top - 3,
+            width: flyCellRect.width + 6,
+            height: flyCellRect.height + 6,
+            borderRadius: radius + 3,
+            border: `2px solid ${flyCellColor}`,
+            boxShadow: `0 0 14px ${flyCellColor}`,
+            animation: "closing-ring 900ms ease-out forwards",
           }}
         />
       )}

@@ -42,7 +42,7 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-export default function DayFlow({ onDayChange, theme = THEMES.default }) {
+export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -57,10 +57,10 @@ export default function DayFlow({ onDayChange, theme = THEMES.default }) {
   // Compartido con FocusMode: ambos deben reaccionar al mismo isRunning
   const timer = useTimer();
 
-  // La frase vive fuera de las ramas de abajo a propósito: si estuviera
+  // El ritual vive fuera de las ramas de abajo a propósito: si estuviera
   // dentro de la rama "día abierto", desaparecería apenas confirmClose()
   // cambia todayAlreadyClosed y el componente salta a la rama "ya registrado".
-  const [closingResult, setClosingResult] = useState(null); // { status, date }
+  const [closingRecord, setClosingRecord] = useState(null); // DayRecord recién cerrado
 
   let content = null;
 
@@ -124,9 +124,11 @@ export default function DayFlow({ onDayChange, theme = THEMES.default }) {
           <CloseModal
             onConfirm={async (data) => {
               const updated = await confirmClose(data);
-              setClosingResult({
-                status: updated?.status ?? data.status,
-                date: updated?.date ?? activeRecord.date,
+              setClosingRecord(updated ?? {
+                date: activeRecord.date,
+                status: data.status,
+                hours: data.hours,
+                closedAt: new Date().toISOString(),
               });
             }}
             onCancel={cancelClose}
@@ -140,13 +142,13 @@ export default function DayFlow({ onDayChange, theme = THEMES.default }) {
     <>
       {content}
 
-      {closingResult && (
+      {closingRecord && (
         <ClosingPhrase
-          status={closingResult.status}
-          date={closingResult.date}
+          record={closingRecord}
           theme={theme}
+          onRequestLanding={onRequestLanding}
           onDone={() => {
-            setClosingResult(null);
+            setClosingRecord(null);
             onDayChange?.();
           }}
         />

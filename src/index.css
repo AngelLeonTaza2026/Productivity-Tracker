@@ -21,14 +21,42 @@ body {
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* Suspenso previo al revelado del resultado del día */
-@keyframes closing-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.5; }
-  50%      { transform: scale(1.6); opacity: 1; }
-}
-
 /* Anillo que se expande y desaparece justo cuando se revela el resultado */
 @keyframes closing-ring {
   0%   { transform: scale(0.6); opacity: 0.9; }
   100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Respiración sutil de la tarjeta boca abajo, durante el suspenso */
+@keyframes card-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.03); }
+}
+
+/* Golpe de impacto al revelar — la tarjeta "pega" al asentarse */
+@keyframes nfs-punch {
+  0%   { transform: scale(1.14); }
+  60%  { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+/* Streak de velocidad que cruza la pantalla durante el golpe de revelado */
+@keyframes nfs-streak {
+  0%   { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
+  15%  { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translateX(120%) skewX(-12deg); opacity: 0; }
+}
+
+/* Flash blanco que acompaña el golpe de revelado */
+@keyframes nfs-flash {
+  0%   { opacity: 0; }
+  10%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+/* El color final llena la pantalla al transportar hacia la celda real */
+@keyframes nfs-flash-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
