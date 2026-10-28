@@ -64,6 +64,23 @@ export async function getRecordsByYear(year) {
 }
 
 /**
+ * Devuelve los DayRecords de los últimos `days` días terminando en `endDate` (inclusive).
+ * Los días sin registro simplemente no aparecen en el resultado.
+ * @param {string} endDate "YYYY-MM-DD"
+ * @param {number} days
+ */
+export async function getRecentRecords(endDate, days) {
+  const end = new Date(`${endDate}T00:00:00`);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  const y = start.getFullYear();
+  const m = String(start.getMonth() + 1).padStart(2, "0");
+  const d = String(start.getDate()).padStart(2, "0");
+  const from = `${y}-${m}-${d}`;
+  return db.records.where("date").between(from, endDate, true, true).sortBy("date");
+}
+
+/**
  * Actualiza campos de un DayRecord existente. Hace merge parcial (no sobreescribe todo).
  * @param {string} id
  * @param {Partial<DayRecord>} changes

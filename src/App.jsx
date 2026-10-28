@@ -19,7 +19,7 @@ export default function App() {
     <div className="min-h-screen pb-20" style={{ backgroundColor: theme.bg }}>
       {view === "today" && (
         <div className="flex items-center justify-center min-h-[calc(100vh-80px)] px-6">
-          <DayFlow key={refreshKey} onDayChange={refresh} />
+          <DayFlow key={refreshKey} onDayChange={refresh} theme={theme} />
         </div>
       )}
 

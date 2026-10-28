@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { getActiveRecord, getRecordsByYear } from "../db/index.js";
 import { THEMES } from "../themes.js";
+import { getCellBgColor } from "../cellColor.js";
 import { composeExportCanvas, preloadFrameFont } from "../frames.js";
 import EditModal from "./EditModal.jsx";
 import ExportPanel from "./ExportPanel.jsx";
@@ -21,21 +22,6 @@ function toLocalStr(date) {
 }
 
 function todayStr() { return toLocalStr(new Date()); }
-
-function getCellBgColor(record, dateStr, today, t) {
-  const c = t.cells;
-  if (dateStr > today)              return c.future;
-  if (!record)                      return c.empty;
-  if (record.status === "vacation") return c.vacation;
-  if (record.status === "rest")     return c.rest;
-  if (record.status === "zero")     return c.zero;
-  if (!record.closedAt && dateStr === today) return c.todayActive;
-  const h = record.hours ?? 0;
-  if (h >= 5) return c.h5;
-  if (h >= 3) return c.h3;
-  if (h >= 1) return c.h1;
-  return c.empty;
-}
 
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };

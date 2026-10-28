@@ -5,6 +5,7 @@ import CloseModal from "./CloseModal.jsx";
 import ClosingPhrase from "./ClosingPhrase.jsx";
 import { useDayFlow } from "../hooks/useDayFlow.js";
 import { useTimer } from "../hooks/useTimer.js";
+import { THEMES } from "../themes.js";
 
 function todayLabel() {
   return new Date().toLocaleDateString("es", {
@@ -41,7 +42,7 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-export default function DayFlow({ onDayChange }) {
+export default function DayFlow({ onDayChange, theme = THEMES.default }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -59,7 +60,7 @@ export default function DayFlow({ onDayChange }) {
   // La frase vive fuera de las ramas de abajo a propósito: si estuviera
   // dentro de la rama "día abierto", desaparecería apenas confirmClose()
   // cambia todayAlreadyClosed y el componente salta a la rama "ya registrado".
-  const [closingPhraseStatus, setClosingPhraseStatus] = useState(null);
+  const [closingResult, setClosingResult] = useState(null); // { status, date }
 
   let content = null;
 
@@ -123,7 +124,10 @@ export default function DayFlow({ onDayChange }) {
           <CloseModal
             onConfirm={async (data) => {
               const updated = await confirmClose(data);
-              setClosingPhraseStatus(updated?.status ?? data.status);
+              setClosingResult({
+                status: updated?.status ?? data.status,
+                date: updated?.date ?? activeRecord.date,
+              });
             }}
             onCancel={cancelClose}
           />
@@ -136,11 +140,13 @@ export default function DayFlow({ onDayChange }) {
     <>
       {content}
 
-      {closingPhraseStatus && (
+      {closingResult && (
         <ClosingPhrase
-          status={closingPhraseStatus}
+          status={closingResult.status}
+          date={closingResult.date}
+          theme={theme}
           onDone={() => {
-            setClosingPhraseStatus(null);
+            setClosingResult(null);
             onDayChange?.();
           }}
         />
