@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Timer from "./Timer.jsx";
 import FocusMode from "./FocusMode.jsx";
 import CloseModal from "./CloseModal.jsx";
@@ -60,7 +60,13 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding }) {
+// Franja del borde derecho reservada para el swipe hacia la vista anual
+// (como el "volver" de iOS, pero yendo hacia adelante) — fuera de esa
+// franja no pasa nada, no hay ningún otro gesto de arrastre en esta vista.
+const EDGE_ZONE = 24;
+const SWIPE_THRESHOLD = 60;
+
+export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, onSwipeToYear }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -79,6 +85,41 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
   // dentro de la rama "día abierto", desaparecería apenas confirmClose()
   // cambia todayAlreadyClosed y el componente salta a la rama "ya registrado".
   const [closingRecord, setClosingRecord] = useState(null); // DayRecord recién cerrado
+
+  // Swipe desde el borde derecho → vista anual
+  const onSwipeToYearRef = useRef(onSwipeToYear);
+  useEffect(() => { onSwipeToYearRef.current = onSwipeToYear; }, [onSwipeToYear]);
+
+  useEffect(() => {
+    let startX = null;
+    let candidate = false;
+
+    function onTouchStart(e) {
+      if (e.touches.length !== 1) return;
+      startX = e.touches[0].clientX;
+      candidate = startX > window.innerWidth - EDGE_ZONE;
+    }
+    function onTouchMove(e) {
+      if (!candidate || startX === null) return;
+      const dx = e.touches[0].clientX - startX;
+      if (dx < -SWIPE_THRESHOLD) {
+        candidate = false;
+        onSwipeToYearRef.current?.();
+      }
+    }
+    function onTouchEnd() { candidate = false; startX = null; }
+
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+    document.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
 
   let content = null;
 

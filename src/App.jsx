@@ -26,13 +26,27 @@ export default function App() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: theme.bg, paddingBottom: NAV_RESERVE }}>
       {view === "today" && (
-        <div className="flex items-center justify-center px-6" style={{ minHeight: `calc(100vh - ${NAV_RESERVE}px)` }}>
-          <DayFlow key={refreshKey} onDayChange={refresh} theme={theme} onRequestLanding={requestLanding} />
+        <div
+          key="today"
+          className="flex items-center justify-center px-6"
+          style={{ minHeight: `calc(100vh - ${NAV_RESERVE}px)`, animation: "view-enter-left 260ms ease" }}
+        >
+          <DayFlow
+            key={refreshKey}
+            onDayChange={refresh}
+            theme={theme}
+            onRequestLanding={requestLanding}
+            onSwipeToYear={() => setView("year")}
+          />
         </div>
       )}
 
       {view === "year" && (
-        <div className="fixed inset-0" style={{ bottom: NAV_RESERVE, backgroundColor: theme.bg }}>
+        <div
+          key="year"
+          className="fixed inset-0"
+          style={{ bottom: NAV_RESERVE, backgroundColor: theme.bg, animation: "view-enter-right 260ms ease" }}
+        >
           <Heatmap
             refreshKey={refreshKey}
             onRecordChange={refresh}
@@ -40,6 +54,7 @@ export default function App() {
             onThemeToggle={toggleTheme}
             landing={landing}
             onLandingDone={() => setLanding(null)}
+            onSwipeToToday={() => setView("today")}
           />
         </div>
       )}

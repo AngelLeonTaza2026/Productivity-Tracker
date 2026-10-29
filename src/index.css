@@ -66,3 +66,9 @@ body {
   0%, 100% { transform: scale(0.8); opacity: 0.25; }
   50%      { transform: scale(1.25); opacity: 0.55; }
 }
+
+/* Entrada de cada vista al cambiar con el swipe de borde — da sensación
+   de dirección (de dónde "vino") sin necesidad de arrastrar las dos
+   vistas montadas a la vez */
+@keyframes view-enter-left  { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes view-enter-right { from { opacity: 0; transform: translateX(18px);  } to { opacity: 1; transform: translateX(0); } }

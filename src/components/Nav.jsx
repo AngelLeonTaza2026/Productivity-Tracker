@@ -1,55 +1,36 @@
-// Reserva vertical para esta barra (contenido + colchón de safe-area),
+// Reserva vertical para este indicador (contenido + colchón de safe-area),
 // reusada por App.jsx/Heatmap.jsx/DayFlow.jsx para no superponerse con
-// ella — único lugar donde se define, así no se desalinean entre sí.
-export const NAV_RESERVE = 62;
+// él — único lugar donde se define, así no se desalinean entre sí.
+export const NAV_RESERVE = 46; // despeja los puntos incluso con safe-area grande (iPhone con home indicator)
 
-const TABS = [
-  {
-    id: "today",
-    label: "Hoy",
-    icon: (active) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        {active && <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />}
-      </svg>
-    ),
-  },
-  {
-    id: "year",
-    label: "Año",
-    icon: (active) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1" fill={active ? "currentColor" : "none"} />
-        <rect x="14" y="3" width="7" height="7" rx="1" fill={active ? "currentColor" : "none"} />
-        <rect x="3" y="14" width="7" height="7" rx="1" fill={active ? "currentColor" : "none"} />
-        <rect x="14" y="14" width="7" height="7" rx="1" fill={active ? "currentColor" : "none"} />
-      </svg>
-    ),
-  },
-];
+const VIEWS = ["today", "year"];
 
+// Ya no es una barra de pestañas — ahora que solo hay 2 vistas, navegar
+// es con swipe desde el borde (ver DayFlow.jsx/Heatmap.jsx). Esto queda
+// como un indicador chico de "dónde estoy" + una forma de tocar para
+// cambiar, por si alguien no descubre el gesto del borde.
 export default function Nav({ view, onChangeView }) {
   return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 flex bg-neutral-950 border-t border-neutral-800"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    <div
+      className="fixed flex items-center justify-center gap-2"
+      style={{ bottom: "max(12px, env(safe-area-inset-bottom))", left: 0, right: 0, zIndex: 20 }}
     >
-      {TABS.map(({ id, label, icon }) => {
-        const active = view === id;
-        return (
-          <button
-            key={id}
-            onClick={() => onChangeView(id)}
-            className={[
-              "flex-1 flex flex-col items-center gap-1 py-2 transition-colors duration-150",
-              active ? "text-white" : "text-neutral-600",
-            ].join(" ")}
-          >
-            {icon(active)}
-            <span className="text-[10px] tracking-widest uppercase">{label}</span>
-          </button>
-        );
-      })}
-    </nav>
+      {VIEWS.map((id) => (
+        <button
+          key={id}
+          onClick={() => onChangeView(id)}
+          aria-label={id === "today" ? "Hoy" : "Año"}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            border: "none",
+            padding: 0,
+            backgroundColor: view === id ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.25)",
+            transition: "background-color 200ms ease",
+          }}
+        />
+      ))}
+    </div>
   );
 }

@@ -66,6 +66,12 @@ const TABLE_PERSPECTIVE = 1400;
 const TILT_MAX  = 16;  // grados extra (sobre la base) que puede sumar el arrastre/mouse
 const TILT_SENS = 0.15; // grados por pixel de arrastre (touch)
 
+// Franja del borde izquierdo reservada para el swipe de vuelta a "hoy"
+// (como el "volver" de iOS). Un toque que arranca ahí no inclina la
+// tarjeta — esa franja es exclusiva del gesto de navegación.
+const EDGE_ZONE = 24;
+const SWIPE_THRESHOLD = 60;
+
 // Coreografía del aterrizaje (estilo "lista negra" de carreras): primero se
 // ve la mesa entera, después la cámara se acerca a la celda, pinta, y vuelve.
 const LAND_FADE_MS  = 500; // el color de pantalla completa se desvanece
@@ -253,6 +259,7 @@ export default function Heatmap({
   onThemeToggle,
   landing,      // { date, color } | null — aterrizaje desde el ritual de cierre de día
   onLandingDone,
+  onSwipeToToday, // swipe desde el borde izquierdo → vuelve a la vista de hoy
 }) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
@@ -300,6 +307,8 @@ export default function Heatmap({
   const suppressClick  = useRef(false);
   const tiltDragging   = useRef(false); // arrastre rápido en curso (inclina en vez de hacer scroll)
   const zoomRef        = useRef(zoom);
+  const edgeSwipe      = useRef(false); // el toque arrancó en la franja del borde izquierdo
+  const onSwipeToTodayRef = useRef(onSwipeToToday);
 
   // Mantener refs sincronizados
   const today = todayStr();
@@ -308,6 +317,7 @@ export default function Heatmap({
   useEffect(() => { recordMapRef.current = recordMap; }, [recordMap]);
   useEffect(() => { themeRef.current   = theme; }, [theme]);
   useEffect(() => { zoomRef.current    = zoom; }, [zoom]);
+  useEffect(() => { onSwipeToTodayRef.current = onSwipeToToday; }, [onSwipeToToday]);
 
   // Aplica la inclinación directo al DOM (sin pasar por setState/React) para
   // que seguir al dedo o al mouse no vuelva a dibujar las ~380 celdas en
@@ -442,6 +452,7 @@ export default function Heatmap({
       const t = e.touches[0];
       touchStartPos.current = { x: t.clientX, y: t.clientY };
       tiltDragging.current = false;
+      edgeSwipe.current = t.clientX < EDGE_ZONE;
       clearTimeout(longPressTimer.current);
       longPressTimer.current = setTimeout(() => {
         isInCrosshair.current = true;
@@ -465,6 +476,18 @@ export default function Heatmap({
       const dx = t.clientX - touchStartPos.current.x;
       const dy = t.clientY - touchStartPos.current.y;
 
+      // El toque arrancó en la franja del borde: esperar a ver si cruza el
+      // umbral para volver a "hoy" — mientras tanto no inclina la tarjeta,
+      // esa franja es exclusiva del gesto de navegación (como en iOS).
+      if (edgeSwipe.current) {
+        if (dx > SWIPE_THRESHOLD) {
+          edgeSwipe.current = false;
+          clearTimeout(longPressTimer.current);
+          onSwipeToTodayRef.current?.();
+        }
+        return;
+      }
+
       // Un arrastre franco (antes de que se cumplan los 350ms) cancela el
       // modo crosshair y pasa a inclinar la mesa, no a hacer scroll (ya no
       // hay nada que scrollear: el año es una etiqueta fija).
@@ -484,6 +507,7 @@ export default function Heatmap({
 
     function onTouchEnd(e) {
       clearTimeout(longPressTimer.current);
+      edgeSwipe.current = false;
 
       if (isInCrosshair.current) {
         isInCrosshair.current = false;
@@ -514,6 +538,7 @@ export default function Heatmap({
       clearTimeout(longPressTimer.current);
       isInCrosshair.current = false;
       tiltDragging.current = false;
+      edgeSwipe.current = false;
       setCrosshair(null);
       applyTilt(0, 0, true);
     }
