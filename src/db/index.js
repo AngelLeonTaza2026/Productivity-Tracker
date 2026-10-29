@@ -14,6 +14,14 @@ db.version(2).stores({
 
 export default db;
 
+// crypto.randomUUID() exige contexto seguro (HTTPS o localhost) — en un
+// contexto inseguro (ej. abrir la app por IP local sin HTTPS) no existe y
+// "Abrir día" fallaba en silencio. Este respaldo no necesita contexto seguro.
+function newId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -22,7 +30,7 @@ export default db;
  */
 export async function createRecord(data) {
   const record = {
-    id: crypto.randomUUID(),
+    id: newId(),
     date: data.date,
     status: data.status ?? "productive",
     hours: data.hours ?? null,
