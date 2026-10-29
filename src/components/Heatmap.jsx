@@ -6,6 +6,7 @@ import { getCellBgColor } from "../cellColor.js";
 import { composeExportCanvas, preloadFrameFont } from "../frames.js";
 import EditModal from "./EditModal.jsx";
 import ExportPanel from "./ExportPanel.jsx";
+import { NAV_RESERVE } from "./Nav.jsx";
 
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
 const MONTH_SHORT    = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -29,8 +30,8 @@ const CARD_PAD = 14; // padding del "cuerpo" de la tarjeta alrededor de la grill
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };
   const availW = window.innerWidth  - 16 - CARD_PAD * 2;
-  // -80 nav inferior, -8 margen, -32 etiqueta fija del año arriba
-  const availH = window.innerHeight - 80 - 8 - 32 - CARD_PAD * 2;
+  // -NAV_RESERVE nav inferior, -8 margen, -32 etiqueta del año / menú arriba
+  const availH = window.innerHeight - NAV_RESERVE - 8 - 32 - CARD_PAD * 2;
   for (let c = 28; c >= 8; c--) {
     const g = Math.max(1, Math.round(c * 0.12));
     const w = LABEL_W + 12 * c + 11 * g;
@@ -111,10 +112,29 @@ async function exportHeatmapAsImage(tableEl, gridEl, year, bgColor, frameId) {
 
 function DownloadIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 3v12" />
       <path d="M7 10l5 5 5-5" />
       <path d="M5 21h14" />
+    </svg>
+  );
+}
+
+function MoreIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="12" cy="19" r="1.8" />
+    </svg>
+  );
+}
+
+function ThemeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -236,6 +256,10 @@ export default function Heatmap({
 }) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
+
+  // Menú de opciones extra (tema, exportar) — agrupadas para no ensuciar
+  // la tarjeta con botones sueltos
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Exportar como imagen
   const gridRef = useRef(null);
@@ -664,55 +688,6 @@ export default function Heatmap({
     }
   }
 
-  // ── Paneles laterales ─────────────────────────────────────────────────
-  const SideLeft = theme.id === "bear" ? (
-    <div
-      className="absolute select-none pointer-events-none"
-      style={{
-        left: 6, top: "50%",
-        transform: "translateY(-50%) rotate(180deg)",
-        writingMode: "vertical-rl",
-        textOrientation: "mixed",
-      }}
-    >
-      <span style={{
-        fontFamily: "'Press Start 2P', monospace",
-        fontSize: "0.24rem",
-        letterSpacing: "0.35em",
-        color: "rgba(96,165,250,0.18)",
-      }}>
-        EVERY SECOND COUNTS
-      </span>
-    </div>
-  ) : null;
-
-  const SideRight = (
-    <button
-      onClick={onThemeToggle}
-      className="absolute select-none"
-      style={{
-        right: 6, top: "50%",
-        transform: "translateY(-50%)",
-        writingMode: "vertical-rl",
-        textOrientation: "mixed",
-        padding: "10px 3px",
-        background: "transparent",
-        border: "none",
-        cursor: "pointer",
-      }}
-      aria-label={`Cambiar a tema ${theme.label}`}
-    >
-      <span style={{
-        fontFamily: "'Press Start 2P', monospace",
-        fontSize: "0.24rem",
-        letterSpacing: "0.3em",
-        color: theme.toggleColor,
-      }}>
-        {theme.label}
-      </span>
-    </button>
-  );
-
   const isZooming = flyPhase === "land-zoom-in" || flyPhase === "land-zoom-out";
   // Transform/transition declarativos: solo reflejan el zoom del aterrizaje
   // (reposo = sin inclinación dinámica). El tilt interactivo se aplica
@@ -723,10 +698,7 @@ export default function Heatmap({
 
   return (
     <div className="w-full h-full">
-      {/* Escenario: zona donde se detectan arrastre/mouse. Es el único
-          contenedor común con los paneles laterales (SideLeft/SideRight),
-          que quedan fuera de la tarjeta a propósito — no deben inclinarse,
-          solo la tarjeta se mueve, como una carta y no toda la mesa. */}
+      {/* Escenario: zona donde se detectan arrastre/mouse. */}
       <div
         ref={scrollRef}
         onMouseMove={handleMouseMove}
@@ -742,8 +714,6 @@ export default function Heatmap({
           position: "relative",
         }}
       >
-        {SideLeft}
-
         {/*
           Envoltorio de perspectiva — SOLO para la tarjeta, nunca para los
           hermanos `fixed` (portal, modal, tooltip, botón exportar, año):
@@ -804,16 +774,14 @@ export default function Heatmap({
             </div>
           </div>
         </div>
-
-        {SideRight}
       </div>
 
-      {/* Año — etiqueta fija (ya no se revela haciendo scroll, ese gesto
-          ahora inclina la mesa) */}
+      {/* Año — etiqueta fija en la esquina libre (ya no se revela haciendo
+          scroll, ese gesto ahora inclina la tarjeta) */}
       {!isFlying && (
         <p
-          className="fixed select-none text-center font-mono text-sm tracking-[0.35em] pointer-events-none"
-          style={{ top: "max(14px, env(safe-area-inset-top))", left: 0, right: 0, color: theme.yearColor }}
+          className="fixed select-none font-mono text-sm tracking-[0.35em] pointer-events-none"
+          style={{ top: "max(14px, env(safe-area-inset-top))", left: 14, color: theme.yearColor }}
         >
           {year}
         </p>
@@ -889,25 +857,61 @@ export default function Heatmap({
         />
       )}
 
-      {/* Exportar vista anual como imagen */}
+      {/* Opciones extra (tema, exportar) — agrupadas en un menú para no
+          ensuciar la tarjeta con botones sueltos */}
       {!isFlying && (
-        <button
-          onClick={() => setExportPanelOpen(true)}
-          aria-label="Exportar como imagen"
-          className="fixed select-none"
-          style={{
-            top: "max(14px, env(safe-area-inset-top))",
-            right: 14,
-            zIndex: 30,
-            padding: 8,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: theme.toggleColor,
-          }}
-        >
-          <DownloadIcon />
-        </button>
+        <>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="Más opciones"
+            className="fixed select-none"
+            style={{
+              top: "max(14px, env(safe-area-inset-top))",
+              right: 14,
+              zIndex: 30,
+              padding: 8,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: theme.toggleColor,
+            }}
+          >
+            <MoreIcon />
+          </button>
+
+          {menuOpen && (
+            <>
+              <button
+                className="fixed inset-0 z-30"
+                style={{ background: "transparent", border: "none" }}
+                aria-label="Cerrar menú"
+                onClick={() => setMenuOpen(false)}
+              />
+              <div
+                className="fixed z-30 rounded-xl border border-neutral-800 overflow-hidden"
+                style={{
+                  top: "calc(max(14px, env(safe-area-inset-top)) + 34px)",
+                  right: 14,
+                  width: 180,
+                  backgroundColor: "#171717",
+                }}
+              >
+                <button
+                  onClick={() => { setMenuOpen(false); setExportPanelOpen(true); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-xs tracking-widest uppercase text-neutral-300 hover:bg-neutral-800 transition-colors"
+                >
+                  <DownloadIcon /> Exportar
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onThemeToggle?.(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-xs tracking-widest uppercase text-neutral-300 hover:bg-neutral-800 transition-colors border-t border-neutral-800"
+                >
+                  <ThemeIcon /> Tema: {theme.label}
+                </button>
+              </div>
+            </>
+          )}
+        </>
       )}
 
       {exportPanelOpen && (

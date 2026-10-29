@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import DayFlow from "./components/DayFlow.jsx";
 import Heatmap from "./components/Heatmap.jsx";
-import Nav from "./components/Nav.jsx";
+import Nav, { NAV_RESERVE } from "./components/Nav.jsx";
 import { THEMES } from "./themes.js";
 
 export default function App() {
@@ -24,15 +24,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen pb-20" style={{ backgroundColor: theme.bg }}>
+    <div className="min-h-screen" style={{ backgroundColor: theme.bg, paddingBottom: NAV_RESERVE }}>
       {view === "today" && (
-        <div className="flex items-center justify-center min-h-[calc(100vh-80px)] px-6">
+        <div className="flex items-center justify-center px-6" style={{ minHeight: `calc(100vh - ${NAV_RESERVE}px)` }}>
           <DayFlow key={refreshKey} onDayChange={refresh} theme={theme} onRequestLanding={requestLanding} />
         </div>
       )}
 
       {view === "year" && (
-        <div className="fixed inset-0" style={{ bottom: 80, backgroundColor: theme.bg }}>
+        <div className="fixed inset-0" style={{ bottom: NAV_RESERVE, backgroundColor: theme.bg }}>
           <Heatmap
             refreshKey={refreshKey}
             onRecordChange={refresh}

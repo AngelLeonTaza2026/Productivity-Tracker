@@ -6,6 +6,7 @@ import ClosingPhrase from "./ClosingPhrase.jsx";
 import { useDayFlow } from "../hooks/useDayFlow.js";
 import { useTimer } from "../hooks/useTimer.js";
 import { THEMES } from "../themes.js";
+import { NAV_RESERVE } from "./Nav.jsx";
 
 function todayLabel() {
   return new Date().toLocaleDateString("es", {
@@ -37,16 +38,15 @@ function MoonIcon() {
 }
 
 // Esquina inferior izquierda — opuesta a la fecha, por ENCIMA de la barra
-// de navegación (Nav.jsx, ~80px incluyendo el safe-area, mismo margen que
-// usa Heatmap.jsx para su vista). Antes vivía pegado al borde de la
-// pantalla e invadía esa barra.
+// de navegación (NAV_RESERVE, definida en Nav.jsx). Antes vivía pegado al
+// borde de la pantalla e invadía esa barra.
 function CloseDayButton({ onClick }) {
   return (
     <button
       onClick={onClick}
       aria-label="Cerrar día"
       className="fixed flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300 transition-colors duration-200"
-      style={{ bottom: 94, left: 24, zIndex: 20 }}
+      style={{ bottom: NAV_RESERVE + 14, left: 24, zIndex: 20 }}
     >
       <span className="relative flex items-center justify-center" style={{ width: 34, height: 34 }}>
         <span
