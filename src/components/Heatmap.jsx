@@ -24,11 +24,13 @@ function toLocalStr(date) {
 
 function todayStr() { return toLocalStr(new Date()); }
 
+const CARD_PAD = 14; // padding del "cuerpo" de la tarjeta alrededor de la grilla
+
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };
-  const availW = window.innerWidth  - 16;
+  const availW = window.innerWidth  - 16 - CARD_PAD * 2;
   // -80 nav inferior, -8 margen, -32 etiqueta fija del año arriba
-  const availH = window.innerHeight - 80 - 8 - 32;
+  const availH = window.innerHeight - 80 - 8 - 32 - CARD_PAD * 2;
   for (let c = 28; c >= 8; c--) {
     const g = Math.max(1, Math.round(c * 0.12));
     const w = LABEL_W + 12 * c + 11 * g;
@@ -259,7 +261,8 @@ export default function Heatmap({
 
   const [dims, setDims] = useState(() => computeCell());
 
-  const scrollRef    = useRef(null);
+  const scrollRef    = useRef(null); // "escenario": zona donde se detectan los gestos
+  const cardRef      = useRef(null); // la tarjeta/mesa en sí — lo único que se inclina
   const flyTimerRef  = useRef(null);
 
   // Refs para los handlers imperativos (capturan valores frescos)
@@ -287,7 +290,7 @@ export default function Heatmap({
   // cada pixel de movimiento — eso sí se sentiría trabado. Compone con el
   // zoom del aterrizaje leyendo su valor actual desde zoomRef.
   function applyTilt(rx, ry, withTransition) {
-    const el = scrollRef.current;
+    const el = cardRef.current;
     if (!el) return;
     const z = zoomRef.current;
     el.style.transition = withTransition ? "transform 450ms cubic-bezier(0.22, 1, 0.36, 1)" : "none";
@@ -353,7 +356,7 @@ export default function Heatmap({
   }, [landing]);
 
   function startLandZoomIn(date) {
-    const tableEl = scrollRef.current;
+    const tableEl = cardRef.current;
     const cellEl  = document.querySelector(`button[data-date="${date}"]`);
     if (!tableEl || !cellEl) { onLandingDone?.(); return; }
 
@@ -533,8 +536,8 @@ export default function Heatmap({
   // mesa, sin necesidad de arrastrar ni hacer clic. Directo al DOM por la
   // misma razón que el touch: mousemove dispara muy seguido.
   function handleMouseMove(e) {
-    if (flyPhaseRef.current !== "idle") return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    if (flyPhaseRef.current !== "idle" || !cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width - 0.5;
     const py = (e.clientY - rect.top) / rect.height - 0.5;
     applyTilt(
@@ -552,11 +555,11 @@ export default function Heatmap({
   function handleClose() { flyOut(); }
 
   async function handleExport(frameId) {
-    if (exporting || !gridRef.current || !scrollRef.current) return;
+    if (exporting || !gridRef.current || !cardRef.current) return;
     setExporting(true);
     setExportError(null);
     try {
-      await exportHeatmapAsImage(scrollRef.current, gridRef.current, year, theme.bg, frameId);
+      await exportHeatmapAsImage(cardRef.current, gridRef.current, year, theme.bg, frameId);
       setExportPanelOpen(false);
     } catch (err) {
       console.error("Error exportando heatmap:", err);
@@ -720,39 +723,89 @@ export default function Heatmap({
 
   return (
     <div className="w-full h-full">
-      {/*
-        Envoltorio de perspectiva — SOLO para la mesa, nunca para los
-        hermanos `fixed` (portal, modal, tooltip, botón exportar, año):
-        tanto `perspective` como `transform` convierten a su elemento en el
-        "contenedor" de los descendientes `fixed`, así que si envolviera todo
-        el componente les movería la posición. Por eso este div solo tiene
-        un hijo: la mesa.
-      */}
-      <div style={{ width: "100%", height: "100%", perspective: `${TABLE_PERSPECTIVE}px` }}>
-        {/* La mesa — inclinación de reposo + la dinámica (arrastre/mouse) +
-            el zoom del aterrizaje, todo en el mismo transform */}
-        <div
-          ref={scrollRef}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-          style={{
-            width: "100%",
-            height: "100%",
-            touchAction: "none",
-            backgroundColor: theme.bg,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            transform: `rotateX(${TABLE_TILT_DEG}deg) scale(${zoom.scale})`,
-            transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
-            transition: restTransition,
-          }}
-        >
-          {SideLeft}
-          <div ref={gridRef} style={gridStyle}>{rows}</div>
-          {SideRight}
+      {/* Escenario: zona donde se detectan arrastre/mouse. Es el único
+          contenedor común con los paneles laterales (SideLeft/SideRight),
+          que quedan fuera de la tarjeta a propósito — no deben inclinarse,
+          solo la tarjeta se mueve, como una carta y no toda la mesa. */}
+      <div
+        ref={scrollRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          width: "100%",
+          height: "100%",
+          touchAction: "none",
+          backgroundColor: theme.bg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+        }}
+      >
+        {SideLeft}
+
+        {/*
+          Envoltorio de perspectiva — SOLO para la tarjeta, nunca para los
+          hermanos `fixed` (portal, modal, tooltip, botón exportar, año):
+          tanto `perspective` como `transform` convierten a su elemento en el
+          "contenedor" de los descendientes `fixed`, así que si envolviera
+          más que la tarjeta les movería la posición.
+        */}
+        <div style={{ perspective: `${TABLE_PERSPECTIVE}px` }}>
+          {/* La tarjeta — inclinación de reposo + la dinámica (arrastre/
+              mouse) + el zoom del aterrizaje, todo en el mismo transform.
+              transformStyle preserve-3d deja que la cara trasera (el
+              "grosor") se vea de verdad al inclinarse, no aplastada. */}
+          <div
+            ref={cardRef}
+            style={{
+              position: "relative",
+              borderRadius: 14,
+              transformStyle: "preserve-3d",
+              transform: `rotateX(${TABLE_TILT_DEG}deg) scale(${zoom.scale})`,
+              transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
+              transition: restTransition,
+              boxShadow: "0 24px 44px -18px rgba(0,0,0,0.6), 0 2px 10px rgba(0,0,0,0.3)",
+            }}
+          >
+            {/* Cara trasera — le da grosor real: se asoma por el borde
+                cuando la tarjeta se inclina, en vez de verse como papel. */}
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: 14,
+                backgroundColor: theme.bg,
+                filter: "brightness(0.5)",
+                transform: "translateZ(-7px)",
+              }}
+            />
+
+            {/* Cara frontal */}
+            <div
+              style={{
+                position: "relative",
+                borderRadius: 14,
+                padding: CARD_PAD,
+                backgroundColor: theme.bg,
+                overflow: "hidden",
+              }}
+            >
+              {/* Brillo sutil — da sensación de material, no de imagen plana */}
+              <div
+                className="pointer-events-none"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.06), transparent 55%)",
+                }}
+              />
+              <div ref={gridRef} style={gridStyle}>{rows}</div>
+            </div>
+          </div>
         </div>
+
+        {SideRight}
       </div>
 
       {/* Año — etiqueta fija (ya no se revela haciendo scroll, ese gesto
