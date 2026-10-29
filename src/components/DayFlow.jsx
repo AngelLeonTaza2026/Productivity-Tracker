@@ -28,16 +28,34 @@ function DateBadge({ children }) {
   );
 }
 
-// Esquina inferior izquierda — opuesta a la fecha, con margen para no quedar
-// pegado al borde ni al botón principal del timer.
+function MoonIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 1 0 11 11z" />
+    </svg>
+  );
+}
+
+// Esquina inferior izquierda — opuesta a la fecha, por ENCIMA de la barra
+// de navegación (Nav.jsx, ~80px incluyendo el safe-area, mismo margen que
+// usa Heatmap.jsx para su vista). Antes vivía pegado al borde de la
+// pantalla e invadía esa barra.
 function CloseDayButton({ onClick }) {
   return (
     <button
       onClick={onClick}
-      className="fixed px-8 py-2 rounded-full bg-slate-700 text-slate-100 text-xs tracking-widest uppercase hover:bg-slate-600 transition-all duration-200"
-      style={{ bottom: "max(28px, calc(16px + env(safe-area-inset-bottom)))", left: 24, zIndex: 20 }}
+      aria-label="Cerrar día"
+      className="fixed flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300 transition-colors duration-200"
+      style={{ bottom: 94, left: 24, zIndex: 20 }}
     >
-      Cerrar día
+      <span className="relative flex items-center justify-center" style={{ width: 34, height: 34 }}>
+        <span
+          className="absolute inset-0 rounded-full bg-slate-700"
+          style={{ animation: "close-pulse 2.6s ease-in-out infinite" }}
+        />
+        <MoonIcon />
+      </span>
+      <span className="text-[10px] tracking-widest uppercase">Cerrar día</span>
     </button>
   );
 }

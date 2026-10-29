@@ -60,3 +60,9 @@ body {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+
+/* Halo detrás del ícono de "Cerrar día", respira de fondo todo el tiempo */
+@keyframes close-pulse {
+  0%, 100% { transform: scale(0.8); opacity: 0.25; }
+  50%      { transform: scale(1.25); opacity: 0.55; }
+}
