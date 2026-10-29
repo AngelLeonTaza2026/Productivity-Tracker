@@ -10,9 +10,10 @@ import ExportPanel from "./ExportPanel.jsx";
 const MONTH_INITIALS = ["E","F","M","A","M","J","J","A","S","O","N","D"];
 const MONTH_SHORT    = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const LABEL_W  = 18;
-const YEAR_HDR = 56;
 
 function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
+
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
 function toLocalStr(date) {
   const y = date.getFullYear();
@@ -26,7 +27,8 @@ function todayStr() { return toLocalStr(new Date()); }
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };
   const availW = window.innerWidth  - 16;
-  const availH = window.innerHeight - 80 - 8;
+  // -80 nav inferior, -8 margen, -32 etiqueta fija del año arriba
+  const availH = window.innerHeight - 80 - 8 - 32;
   for (let c = 28; c >= 8; c--) {
     const g = Math.max(1, Math.round(c * 0.12));
     const w = LABEL_W + 12 * c + 11 * g;
@@ -49,11 +51,17 @@ const EXPORT_SCALE   = 3;
 const EXPORT_TITLE_H = 52; // banda del título, en px CSS antes de EXPORT_SCALE
 const EXPORT_MARGIN  = 20; // margen a los 4 lados, en px CSS antes de EXPORT_SCALE
 
-// Presentación 3D ambiente de la mesa — inclinación fija, sutil, de "estar
-// mirando la tabla desde arriba", no un dial que el usuario pueda girar
-// (eso chocaría con el scroll y el crosshair de mantener presionado).
+// Presentación 3D de la mesa — inclinación base de reposo (ambiente) más
+// una inclinación dinámica que el usuario maneja arrastrando el dedo
+// (teléfono) o moviendo el mouse (PC), como si la agarrara como una carta.
+// Reemplaza el scroll que antes revelaba el año (ahora es una etiqueta fija)
+// para no competir por el mismo gesto; mantener presionado para
+// previsualizar un día sigue intacto, se dispara antes de que el arrastre
+// se interprete como inclinación.
 const TABLE_TILT_DEG = 9;
 const TABLE_PERSPECTIVE = 1400;
+const TILT_MAX  = 16;  // grados extra (sobre la base) que puede sumar el arrastre/mouse
+const TILT_SENS = 0.15; // grados por pixel de arrastre (touch)
 
 // Coreografía del aterrizaje (estilo "lista negra" de carreras): primero se
 // ve la mesa entera, después la cámara se acerca a la celda, pinta, y vuelve.
@@ -263,6 +271,8 @@ export default function Heatmap({
   const longPressTimer = useRef(null);
   const touchStartPos  = useRef({ x: 0, y: 0 });
   const suppressClick  = useRef(false);
+  const tiltDragging   = useRef(false); // arrastre rápido en curso (inclina en vez de hacer scroll)
+  const zoomRef        = useRef(zoom);
 
   // Mantener refs sincronizados
   const today = todayStr();
@@ -270,6 +280,20 @@ export default function Heatmap({
   useEffect(() => { flyPhaseRef.current = flyPhase; }, [flyPhase]);
   useEffect(() => { recordMapRef.current = recordMap; }, [recordMap]);
   useEffect(() => { themeRef.current   = theme; }, [theme]);
+  useEffect(() => { zoomRef.current    = zoom; }, [zoom]);
+
+  // Aplica la inclinación directo al DOM (sin pasar por setState/React) para
+  // que seguir al dedo o al mouse no vuelva a dibujar las ~380 celdas en
+  // cada pixel de movimiento — eso sí se sentiría trabado. Compone con el
+  // zoom del aterrizaje leyendo su valor actual desde zoomRef.
+  function applyTilt(rx, ry, withTransition) {
+    const el = scrollRef.current;
+    if (!el) return;
+    const z = zoomRef.current;
+    el.style.transition = withTransition ? "transform 450ms cubic-bezier(0.22, 1, 0.36, 1)" : "none";
+    el.style.transform = `rotateX(${TABLE_TILT_DEG + rx}deg) rotateY(${ry}deg) scale(${z.scale})`;
+    el.style.transformOrigin = `${z.originX}% ${z.originY}%`;
+  }
 
   const cellPx  = dims.cell;
   const gapPx   = dims.gap;
@@ -277,10 +301,6 @@ export default function Heatmap({
   const radius   = Math.max(1, Math.round(cellPx * 0.1));
   const isFlying = flyPhase !== "idle";
   const isLanding = flyPhase.startsWith("land-");
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
-  }, []);
 
   useEffect(() => {
     function onResize() { setDims(computeCell()); }
@@ -391,9 +411,10 @@ export default function Heatmap({
     }
 
     function onTouchStart(e) {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1 || flyPhaseRef.current !== "idle") return;
       const t = e.touches[0];
       touchStartPos.current = { x: t.clientX, y: t.clientY };
+      tiltDragging.current = false;
       clearTimeout(longPressTimer.current);
       longPressTimer.current = setTimeout(() => {
         isInCrosshair.current = true;
@@ -406,38 +427,68 @@ export default function Heatmap({
     function onTouchMove(e) {
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
-      if (!isInCrosshair.current) {
-        // Cancelar longpress si el dedo se movió antes de los 350ms
-        const dx = t.clientX - touchStartPos.current.x;
-        const dy = t.clientY - touchStartPos.current.y;
-        if (Math.sqrt(dx * dx + dy * dy) > 10) clearTimeout(longPressTimer.current);
+
+      if (isInCrosshair.current) {
+        e.preventDefault(); // Bloquea el gesto de inclinar mientras está en modo crosshair
+        const info = getCellAt(t.clientX, t.clientY);
+        setCrosshair({ x: t.clientX, y: t.clientY, info });
         return;
       }
-      e.preventDefault(); // Bloquea scroll mientras está en modo crosshair
-      const info = getCellAt(t.clientX, t.clientY);
-      setCrosshair({ x: t.clientX, y: t.clientY, info });
+
+      const dx = t.clientX - touchStartPos.current.x;
+      const dy = t.clientY - touchStartPos.current.y;
+
+      // Un arrastre franco (antes de que se cumplan los 350ms) cancela el
+      // modo crosshair y pasa a inclinar la mesa, no a hacer scroll (ya no
+      // hay nada que scrollear: el año es una etiqueta fija).
+      if (!tiltDragging.current) {
+        if (Math.hypot(dx, dy) <= 10) return;
+        clearTimeout(longPressTimer.current);
+        tiltDragging.current = true;
+      }
+
+      e.preventDefault();
+      applyTilt(
+        clamp(-dy * TILT_SENS, -TILT_MAX, TILT_MAX),
+        clamp( dx * TILT_SENS, -TILT_MAX, TILT_MAX),
+        false
+      );
     }
 
     function onTouchEnd(e) {
       clearTimeout(longPressTimer.current);
-      if (!isInCrosshair.current) return;
-      isInCrosshair.current = false;
-      e.preventDefault(); // Suprime el click sintético
-      const t    = e.changedTouches[0];
-      const info = getCellAt(t.clientX, t.clientY);
-      setCrosshair(null);
-      // Suprimir el onClick que React dispara tras el touchend
-      suppressClick.current = true;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        suppressClick.current = false;
-      }));
-      openCell(info);
+
+      if (isInCrosshair.current) {
+        isInCrosshair.current = false;
+        e.preventDefault(); // Suprime el click sintético
+        const t    = e.changedTouches[0];
+        const info = getCellAt(t.clientX, t.clientY);
+        setCrosshair(null);
+        suppressClick.current = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          suppressClick.current = false;
+        }));
+        openCell(info);
+        return;
+      }
+
+      if (tiltDragging.current) {
+        tiltDragging.current = false;
+        applyTilt(0, 0, true); // vuelve sola a la inclinación de reposo
+        // Fue un arrastre, no un tap: suprimir el click sintético que sigue
+        suppressClick.current = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          suppressClick.current = false;
+        }));
+      }
     }
 
     function onTouchCancel() {
       clearTimeout(longPressTimer.current);
       isInCrosshair.current = false;
+      tiltDragging.current = false;
       setCrosshair(null);
+      applyTilt(0, 0, true);
     }
 
     const opts = { passive: false };
@@ -475,8 +526,26 @@ export default function Heatmap({
       setFlyCellRect(null);
       setSelectedDate(null);
       resetViewportZoom();
-      if (scrollRef.current) scrollRef.current.scrollTop = YEAR_HDR;
     }, 520);
+  }
+
+  // Inclinación con mouse en PC — sigue el cursor como si sostuviera la
+  // mesa, sin necesidad de arrastrar ni hacer clic. Directo al DOM por la
+  // misma razón que el touch: mousemove dispara muy seguido.
+  function handleMouseMove(e) {
+    if (flyPhaseRef.current !== "idle") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width - 0.5;
+    const py = (e.clientY - rect.top) / rect.height - 0.5;
+    applyTilt(
+      clamp(-py * TILT_MAX * 2, -TILT_MAX, TILT_MAX),
+      clamp( px * TILT_MAX * 2, -TILT_MAX, TILT_MAX),
+      false
+    );
+  }
+
+  function handleMouseLeave() {
+    applyTilt(0, 0, true);
   }
 
   function handleSaved() { onRecordChange?.(); flyOut(); }
@@ -642,75 +711,60 @@ export default function Heatmap({
   );
 
   const isZooming = flyPhase === "land-zoom-in" || flyPhase === "land-zoom-out";
+  // Transform/transition declarativos: solo reflejan el zoom del aterrizaje
+  // (reposo = sin inclinación dinámica). El tilt interactivo se aplica
+  // aparte, directo al DOM vía applyTilt() — ver más abajo.
+  const restTransition = isZooming
+    ? `transform ${flyPhase === "land-zoom-in" ? LAND_ZOOM_MS : LAND_OUT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+    : "transform 450ms cubic-bezier(0.22, 1, 0.36, 1)";
 
   return (
     <div className="w-full h-full">
       {/*
-        Envoltorio de perspectiva — SOLO para la mesa (scroll + grid), nunca
-        para los hermanos `fixed` (portal, modal, tooltip, botón exportar):
+        Envoltorio de perspectiva — SOLO para la mesa, nunca para los
+        hermanos `fixed` (portal, modal, tooltip, botón exportar, año):
         tanto `perspective` como `transform` convierten a su elemento en el
         "contenedor" de los descendientes `fixed`, así que si envolviera todo
         el componente les movería la posición. Por eso este div solo tiene
-        un hijo: el contenedor de scroll.
+        un hijo: la mesa.
       */}
       <div style={{ width: "100%", height: "100%", perspective: `${TABLE_PERSPECTIVE}px` }}>
-        {/* Scroll container — pull-to-reveal año + snap + mesa inclinada en 3D */}
+        {/* La mesa — inclinación de reposo + la dinámica (arrastre/mouse) +
+            el zoom del aterrizaje, todo en el mismo transform */}
         <div
           ref={scrollRef}
-          className="wheel-scroll"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
           style={{
             width: "100%",
             height: "100%",
-            overflowY: isFlying ? "hidden" : "scroll",
-            overflowX: "hidden",
-            scrollSnapType: "y mandatory",
-            WebkitOverflowScrolling: "touch",
-            overscrollBehavior: "contain",
+            touchAction: "none",
             backgroundColor: theme.bg,
-            transform: `rotateX(${TABLE_TILT_DEG}deg) scale(${zoom.scale})`,
-            transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
-            transition: isZooming
-              ? `transform ${flyPhase === "land-zoom-in" ? LAND_ZOOM_MS : LAND_OUT_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-              : "none",
-          }}
-        >
-        {/* Sección del año (pull-to-reveal) */}
-        <div
-          style={{
-            height: YEAR_HDR,
-            scrollSnapAlign: "start",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            paddingBottom: 14,
-            borderBottom: `1px solid ${theme.dividerColor}`,
-          }}
-        >
-          <span
-            className="select-none font-mono text-sm tracking-[0.35em]"
-            style={{ color: theme.yearColor }}
-          >
-            {year}
-          </span>
-        </div>
-
-        {/* Sección de la grilla */}
-        <div
-          style={{
-            minHeight: "100%",
-            scrollSnapAlign: "start",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
+            transform: `rotateX(${TABLE_TILT_DEG}deg) scale(${zoom.scale})`,
+            transformOrigin: `${zoom.originX}% ${zoom.originY}%`,
+            transition: restTransition,
           }}
         >
           {SideLeft}
           <div ref={gridRef} style={gridStyle}>{rows}</div>
           {SideRight}
         </div>
-        </div>
       </div>
+
+      {/* Año — etiqueta fija (ya no se revela haciendo scroll, ese gesto
+          ahora inclina la mesa) */}
+      {!isFlying && (
+        <p
+          className="fixed select-none text-center font-mono text-sm tracking-[0.35em] pointer-events-none"
+          style={{ top: "max(14px, env(safe-area-inset-top))", left: 0, right: 0, color: theme.yearColor }}
+        >
+          {year}
+        </p>
+      )}
 
       {/* Portal de entrada/salida al editar una celda pasada (clip-path
           desde la celda hasta pantalla completa) — no interviene durante
