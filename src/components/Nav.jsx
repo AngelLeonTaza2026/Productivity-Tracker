@@ -1,7 +1,7 @@
 // Reserva vertical para esta barra (contenido + colchón de safe-area),
 // reusada por App.jsx/Heatmap.jsx/DayFlow.jsx para no superponerse con
 // ella — único lugar donde se define, así no se desalinean entre sí.
-export const NAV_RESERVE = 70;
+export const NAV_RESERVE = 62;
 
 const TABS = [
   {

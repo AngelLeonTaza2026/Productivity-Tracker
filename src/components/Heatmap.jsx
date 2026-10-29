@@ -25,13 +25,13 @@ function toLocalStr(date) {
 
 function todayStr() { return toLocalStr(new Date()); }
 
-const CARD_PAD = 14; // padding del "cuerpo" de la tarjeta alrededor de la grilla
+const CARD_PAD = 6; // padding del "cuerpo" de la tarjeta alrededor de la grilla — lo justo para que se note el borde, sin comerse espacio
 
 function computeCell() {
   if (typeof window === "undefined") return { cell: 18, gap: 2 };
-  const availW = window.innerWidth  - 16 - CARD_PAD * 2;
-  // -NAV_RESERVE nav inferior, -8 margen, -32 etiqueta del año / menú arriba
-  const availH = window.innerHeight - NAV_RESERVE - 8 - 32 - CARD_PAD * 2;
+  const availW = window.innerWidth  - 10 - CARD_PAD * 2;
+  // -NAV_RESERVE nav inferior, -6 margen, -32 etiqueta del año / menú arriba
+  const availH = window.innerHeight - NAV_RESERVE - 6 - 32 - CARD_PAD * 2;
   for (let c = 28; c >= 8; c--) {
     const g = Math.max(1, Math.round(c * 0.12));
     const w = LABEL_W + 12 * c + 11 * g;
