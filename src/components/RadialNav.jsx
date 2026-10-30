@@ -3,17 +3,32 @@ import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion.js";
 
 const LONG_PRESS_MS = 300;
 const ANCHOR_SIZE = 44;          // blanco táctil fijo del botón (el tamaño visual idle es por scale)
-const ITEM_SIZE = 44;
-const STEP_DEG = 48;             // separación angular entre pestañas — fija, no depende del conteo
 const RADIUS_MAX_RATIO = 0.55;   // tope de radio relativo al alto, por si el ancho es muy grande
-const SPRING_MS = 420;
-const SPRING_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-const DRAG_MS = 60;              // suavizado mínimo mientras se arrastra, sin perder respuesta
+const LABEL_RADIUS_RATIO = 0.6;  // a qué distancia del pivote queda el icono/etiqueta de cada sector
 
-// Marcas de minutero y dientes de engranaje del aro — decorativos, ángulos
-// fijos e independientes de las pestañas (como las marcas de un reloj).
-const TICK_ANGLES = Array.from({ length: 13 }, (_, i) => -108 + i * 18);
-const TOOTH_ANGLES = Array.from({ length: 10 }, (_, i) => -99 + i * 22);
+// Apertura/cierre: la media luna crece desde el botón y se encoge de
+// vuelta — es la ÚNICA animación de movimiento del dial. Mientras está
+// abierta no rota, no se estira, no sigue al dedo.
+const OPEN_MS = 420;
+const OPEN_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+const FADE_MS = 160;
+const GLOW_MS = 200; // transición del resaltado al cambiar de sector
+
+// --- Sensibilidad de la selección (ajustables sin tocar la lógica) ---
+// Radio por debajo del cual se ignora el dedo por completo — cerca del
+// pivote el ángulo cambia muchísimo con movimientos mínimos.
+const DEAD_RADIUS_RATIO = 0.3;
+// Grados que el dedo debe adentrarse en un sector nuevo, más allá del
+// límite, antes de que cuente como candidato a selección.
+const HYSTERESIS_DEG = 15;
+// Filtro pasa-bajos sobre el ángulo del dedo (0-1: más alto = menos filtro).
+const SMOOTHING = 0.35;
+// Tiempo que el dedo debe permanecer en el sector candidato antes de que
+// se confirme como la selección iluminada.
+const CONFIRM_MS = 80;
+// Tiempo que la selección debe quedar estable antes de que la cámara
+// recién empiece a asomarse hacia ella (ver PEEK_RATIO en World.jsx).
+const PEEK_DELAY_MS = 150;
 
 function AnchorIcon() {
   return (
@@ -26,55 +41,80 @@ function AnchorIcon() {
 }
 
 // Ángulo del dedo respecto al pivote, en grados, con 0° = arriba y signo
-// positivo = hacia la derecha (misma convención que posFor más abajo).
+// positivo = hacia la derecha.
 function angleFromPointer(px, py, pivot) {
   const dx = px - pivot.x;
   const dy = pivot.y - py;
   return (Math.atan2(dx, dy) * 180) / Math.PI;
 }
 
-function normalizeDelta(d) {
-  let n = d;
-  while (n > 180) n -= 360;
-  while (n < -180) n += 360;
-  return n;
+function pointAt(angleDeg, radius) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: Math.sin(rad) * radius, y: -Math.cos(rad) * radius };
 }
 
-function posFor(angleDeg, radius) {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { dx: Math.sin(rad) * radius, dy: -Math.cos(rad) * radius };
+function sectorAt(angle, boundaries) {
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    if (angle <= boundaries[i + 1]) return i;
+  }
+  return boundaries.length - 2;
+}
+
+// Igual que sectorAt, pero exige haberse adentrado HYSTERESIS_DEG más
+// allá del límite del sector ya confirmado antes de aceptar un cambio —
+// así el dedo no hace parpadear la selección justo en el borde.
+function sectorWithHysteresis(angle, committed, boundaries) {
+  const lo = boundaries[committed];
+  const hi = boundaries[committed + 1];
+  if (angle >= lo && angle <= hi) return committed;
+  const raw = sectorAt(angle, boundaries);
+  if (raw === committed) return committed;
+  if (raw > committed) {
+    const rawLo = boundaries[raw];
+    return angle - rawLo >= HYSTERESIS_DEG || raw - committed > 1 ? raw : committed;
+  }
+  const rawHi = boundaries[raw + 1];
+  return rawHi - angle >= HYSTERESIS_DEG || committed - raw > 1 ? raw : committed;
 }
 
 /**
- * Icono ancla + dial giratorio en media luna para navegar entre pestañas.
+ * Icono ancla + media luna de sectores fijos para navegar entre pestañas.
  * Vive en su propia zona, fuera del grid del heatmap — no choca con el
  * long-press + arrastre del crosshair de Heatmap.jsx ni con el tilt de la
  * tarjeta.
  *
- * Secuencia: mantener presionado el ancla (~300ms) abre el dial con la
- * pestaña actual ya alineada arriba. Sin soltar el dedo, arrastrar a lo
- * largo del arco rota el dial — la cámara del mundo (World.jsx) se
- * adelanta en vivo hacia la pestaña que queda arriba. Soltar confirma esa
- * pestaña y el dial se repliega de vuelta al botón.
+ * La media luna es una forma estática: se divide en N sectores iguales
+ * (de izquierda a derecha, igual que el orden de pestañas en World.jsx)
+ * y solo se anima al abrirse/cerrarse. Mantener presionado el ancla
+ * (~300ms) la abre con la pestaña actual ya iluminada; arrastrar sin
+ * soltar ilumina otro sector (con zona muerta, histéresis y confirmación
+ * por tiempo para que no sea hipersensible); soltar confirma lo
+ * iluminado.
  */
 export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChange, onPreview, onPreviewCancel, theme }) {
   const reducedMotion = usePrefersReducedMotion();
   const [open, setOpen] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const [rotation, setRotation] = useState(0); // delta acumulado del arrastre, relativo a la apertura
+  const [committedSector, setCommittedSector] = useState(0);
 
   const anchorRef = useRef(null);
   const longPressTimer = useRef(null);
+  const confirmTimer = useRef(null);
+  const peekTimer = useRef(null);
   const pivotRef = useRef({ x: 0, y: 0 });
   const radiusRef = useRef(150);
-  const baseIndexRef = useRef(0); // pestaña activa al abrir — la que arranca alineada arriba
-  const lastAngleRef = useRef(null);
-  const lastSelectedRef = useRef(null);
+  const baseIndexRef = useRef(0);      // pestaña activa al abrir
+  const committedRef = useRef(0);      // espejo síncrono de committedSector, para los timers
+  const candidateRef = useRef(null);
+  const smoothedAngleRef = useRef(null);
 
   const count = tabs.length;
-  const tabAngles = useMemo(
-    () => tabs.map((_, i) => (i - (count - 1) / 2) * STEP_DEG),
-    [count]
+  const boundaries = useMemo(() => {
+    const step = 180 / count;
+    return Array.from({ length: count + 1 }, (_, i) => -90 + i * step);
+  }, [count]);
+  const midAngles = useMemo(
+    () => tabs.map((_, i) => (boundaries[i] + boundaries[i + 1]) / 2),
+    [boundaries, tabs.length]
   );
 
   function setOpenState(next) {
@@ -82,43 +122,50 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
     onOpenChange?.(next);
   }
 
-  function selectedIndexFor(ring) {
-    let best = 0;
-    let bestDiff = Infinity;
-    tabAngles.forEach((a, i) => {
-      const diff = Math.abs(normalizeDelta(a - ring));
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = i;
-      }
-    });
-    return best;
+  function commitSector(idx) {
+    committedRef.current = idx;
+    setCommittedSector(idx);
+    candidateRef.current = null;
+    clearTimeout(peekTimer.current);
+    if (idx === baseIndexRef.current) {
+      onPreviewCancel?.();
+    } else {
+      peekTimer.current = setTimeout(() => onPreview?.(tabs[idx].id), PEEK_DELAY_MS);
+    }
   }
 
-  const ring = tabAngles[baseIndexRef.current] + rotation;
-  const selectedIndex = selectedIndexFor(ring);
+  function considerSector(raw) {
+    if (raw === committedRef.current) {
+      clearTimeout(confirmTimer.current);
+      candidateRef.current = null;
+      return;
+    }
+    if (raw !== candidateRef.current) {
+      candidateRef.current = raw;
+      clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => commitSector(raw), CONFIRM_MS);
+    }
+  }
 
   function openWheel() {
     const rect = anchorRef.current.getBoundingClientRect();
     pivotRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     radiusRef.current = Math.min(window.innerWidth / 2, window.innerHeight * RADIUS_MAX_RATIO);
-    baseIndexRef.current = Math.max(0, tabs.findIndex((t) => t.id === activeId));
-    lastAngleRef.current = null;
-    lastSelectedRef.current = baseIndexRef.current;
-    setRotation(0);
-    setDragging(true);
+    const idx = Math.max(0, tabs.findIndex((t) => t.id === activeId));
+    baseIndexRef.current = idx;
+    committedRef.current = idx;
+    candidateRef.current = null;
+    smoothedAngleRef.current = null;
+    setCommittedSector(idx);
     setOpenState(true);
   }
 
   function closeWheel(confirm) {
-    if (confirm) {
-      const finalIndex = selectedIndexFor(tabAngles[baseIndexRef.current] + rotation);
-      onSelect(tabs[finalIndex].id);
-    }
+    clearTimeout(confirmTimer.current);
+    clearTimeout(peekTimer.current);
+    if (confirm) onSelect(tabs[committedRef.current].id);
     onPreviewCancel?.();
-    setDragging(false);
     setOpenState(false);
-    lastAngleRef.current = null;
   }
 
   function onPointerDown(e) {
@@ -130,42 +177,56 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
   }
 
   function onPointerMove(e) {
-    if (!dragging) return;
-    const angle = angleFromPointer(e.clientX, e.clientY, pivotRef.current);
-    if (lastAngleRef.current == null) {
-      // Primer move tras abrir: solo fija la referencia, no rota todavía
-      // (el dedo suele estar casi sobre el pivote al disparar el long-press).
-      lastAngleRef.current = angle;
-      return;
-    }
-    const delta = normalizeDelta(angle - lastAngleRef.current);
-    lastAngleRef.current = angle;
-    setRotation((r) => {
-      const next = r + delta;
-      const sel = selectedIndexFor(tabAngles[baseIndexRef.current] + next);
-      if (sel !== lastSelectedRef.current) {
-        lastSelectedRef.current = sel;
-        onPreview?.(tabs[sel].id);
-      }
-      return next;
-    });
+    if (!open) return;
+    const dx = e.clientX - pivotRef.current.x;
+    const dy = pivotRef.current.y - e.clientY;
+    const dist = Math.hypot(dx, dy);
+    const rawAngle = angleFromPointer(e.clientX, e.clientY, pivotRef.current);
+    // Zona muerta cerca del pivote, o fuera de la media luna (dedo por
+    // debajo del nivel del botón): se ignora, la selección queda como está.
+    if (dist < DEAD_RADIUS_RATIO * radiusRef.current || Math.abs(rawAngle) > 90) return;
+
+    smoothedAngleRef.current = smoothedAngleRef.current == null
+      ? rawAngle
+      : smoothedAngleRef.current + SMOOTHING * (rawAngle - smoothedAngleRef.current);
+
+    const raw = sectorWithHysteresis(smoothedAngleRef.current, committedRef.current, boundaries);
+    considerSector(raw);
   }
 
   function onPointerUp(e) {
     clearTimeout(longPressTimer.current);
     try { anchorRef.current.releasePointerCapture(e.pointerId); } catch { /* no-op */ }
-    if (dragging) closeWheel(true);
+    if (open) closeWheel(true);
   }
 
   function onPointerCancel() {
     clearTimeout(longPressTimer.current);
-    if (dragging) closeWheel(false);
+    if (open) closeWheel(false);
   }
 
   const radius = radiusRef.current;
-  const transDuration = dragging ? DRAG_MS : reducedMotion ? 160 : SPRING_MS;
-  const transEase = dragging ? "linear" : reducedMotion ? "ease-out" : SPRING_EASE;
+  const openMs = reducedMotion ? 160 : OPEN_MS;
+  const openEase = reducedMotion ? "ease-out" : OPEN_EASE;
   const accent = theme?.cells?.h5 ?? "#4ade80";
+
+  const rimPath = useMemo(() => {
+    const a = pointAt(-90, radius);
+    const b = pointAt(90, radius);
+    return `M ${a.x} ${a.y} A ${radius} ${radius} 0 0 1 ${b.x} ${b.y}`;
+  }, [radius]);
+
+  const basePath = useMemo(() => `${rimPath.replace("M", "M 0 0 L")} Z`, [rimPath]);
+
+  const sectorPaths = useMemo(
+    () =>
+      tabs.map((_, i) => {
+        const a = pointAt(boundaries[i], radius);
+        const b = pointAt(boundaries[i + 1], radius);
+        return `M 0 0 L ${a.x} ${a.y} A ${radius} ${radius} 0 0 1 ${b.x} ${b.y} Z`;
+      }),
+    [boundaries, radius, tabs.length]
+  );
 
   return (
     <div
@@ -178,82 +239,71 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
         pointerEvents: "none",
       }}
     >
-      <div className="relative" style={{ width: ANCHOR_SIZE, height: ANCHOR_SIZE, pointerEvents: "auto" }}>
-        {/* Aro decorativo: ticks de minutero + dientes de engranaje, mismo
-            sistema de coordenadas que las pestañas (centrado en el ancla). */}
-        {open && TICK_ANGLES.map((a, i) => {
-          const visual = a - ring;
-          const { dx, dy } = posFor(visual, radius - 8);
-          return (
-            <div
-              key={`tick-${i}`}
-              aria-hidden="true"
-              className="absolute rounded-full"
-              style={{
-                width: 2,
-                height: 10,
-                left: ANCHOR_SIZE / 2 - 1,
-                top: ANCHOR_SIZE / 2 - 5,
-                background: "rgba(255,255,255,0.18)",
-                pointerEvents: "none",
-                transform: `translate(${dx}px, ${dy}px) rotate(${visual}deg)`,
-                transition: `transform ${transDuration}ms ${transEase}`,
-              }}
-            />
-          );
-        })}
-        {open && TOOTH_ANGLES.map((a, i) => {
-          const visual = a - ring;
-          const { dx, dy } = posFor(visual, radius + 5);
-          return (
-            <div
-              key={`tooth-${i}`}
-              aria-hidden="true"
-              className="absolute rounded-sm"
-              style={{
-                width: 4,
-                height: 6,
-                left: ANCHOR_SIZE / 2 - 2,
-                top: ANCHOR_SIZE / 2 - 3,
-                background: "rgba(255,255,255,0.1)",
-                pointerEvents: "none",
-                transform: `translate(${dx}px, ${dy}px) rotate(${visual}deg)`,
-                transition: `transform ${transDuration}ms ${transEase}`,
-              }}
-            />
-          );
-        })}
+      <div className="relative" style={{ width: ANCHOR_SIZE, height: ANCHOR_SIZE }}>
+        {/* Todo el contenido de la media luna crece/encoge como un único
+            bloque rígido anclado al pivote — es la única animación de
+            movimiento mientras el dial existe. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: ANCHOR_SIZE / 2,
+            top: ANCHOR_SIZE / 2,
+            transformOrigin: "0 0",
+            transform: open ? "scale(1)" : "scale(0.05)",
+            opacity: open ? 1 : 0,
+            pointerEvents: "none",
+            transition: `transform ${openMs}ms ${openEase}, opacity ${FADE_MS}ms ease`,
+          }}
+        >
+          <svg
+            style={{ position: "absolute", left: -radius, top: -radius, width: radius * 2, height: radius, overflow: "visible" }}
+            viewBox={`${-radius} ${-radius} ${radius * 2} ${radius}`}
+          >
+            <path d={basePath} fill="rgba(23,23,23,0.92)" />
+            {sectorPaths.map((d, i) => (
+              <path
+                key={`glow-${tabs[i].id}`}
+                d={d}
+                fill={accent}
+                opacity={i === committedSector ? 0.22 : 0}
+                style={{ transition: `opacity ${GLOW_MS}ms ease-out` }}
+              />
+            ))}
+            {boundaries.slice(1, -1).map((a, i) => {
+              const p = pointAt(a, radius);
+              return (
+                <line key={`div-${i}`} x1={0} y1={0} x2={p.x} y2={p.y} stroke="rgba(255,255,255,0.12)" strokeWidth={0.5} />
+              );
+            })}
+            <path d={rimPath} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={1} />
+          </svg>
 
-        {tabs.map((tab, i) => {
-          const visual = tabAngles[i] - ring;
-          const { dx, dy } = posFor(visual, radius);
-          const isSelected = open && i === selectedIndex;
-          return (
-            <div
-              key={tab.id}
-              aria-hidden="true"
-              className="absolute flex items-center justify-center rounded-full"
-              style={{
-                width: ITEM_SIZE,
-                height: ITEM_SIZE,
-                left: ANCHOR_SIZE / 2 - ITEM_SIZE / 2,
-                top: ANCHOR_SIZE / 2 - ITEM_SIZE / 2,
-                backgroundColor: isSelected ? `${accent}26` : "rgba(23,23,23,0.92)",
-                border: isSelected ? `1px solid ${accent}` : "1px solid rgba(255,255,255,0.08)",
-                boxShadow: isSelected ? `0 0 14px 2px ${accent}66` : "none",
-                color: isSelected ? accent : "rgba(255,255,255,0.45)",
-                pointerEvents: "none",
-                transform: open
-                  ? `translate(${dx}px, ${dy}px) scale(${isSelected ? 1.14 : 1})`
-                  : "translate(0px, 0px) scale(0.2)",
-                opacity: open ? 1 : 0,
-                transition: `transform ${transDuration}ms ${transEase}, opacity 160ms ease, background-color 120ms ease, box-shadow 120ms ease, color 120ms ease`,
-              }}
-            >
-              {tab.icon(isSelected)}
-            </div>
-          );
-        })}
+          {tabs.map((tab, i) => {
+            const isSelected = i === committedSector;
+            const p = pointAt(midAngles[i], radius * LABEL_RADIUS_RATIO);
+            return (
+              <div
+                key={tab.id}
+                aria-hidden="true"
+                className="absolute flex flex-col items-center justify-center"
+                style={{
+                  left: p.x,
+                  top: p.y,
+                  transform: "translate(-50%, -50%)",
+                  color: isSelected ? accent : "rgba(255,255,255,0.45)",
+                  transition: `color ${GLOW_MS}ms ease-out`,
+                  pointerEvents: "none",
+                }}
+              >
+                {tab.icon(isSelected)}
+                <span className="mt-1 text-[10px] uppercase tracking-wide" style={{ whiteSpace: "nowrap" }}>
+                  {tab.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
 
         <button
           ref={anchorRef}

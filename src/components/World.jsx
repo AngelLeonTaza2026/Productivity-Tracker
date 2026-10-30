@@ -2,15 +2,18 @@ import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion.js";
 
 // Resorte con ligero overshoot — misma familia de curva que ya se usa en
 // el resto de la app para transiciones "satisfactorias" (portal del
-// heatmap, modales), para que la cámara se sienta de la misma casa.
-const SPRING_MS = 540;
+// heatmap, modales), para que la cámara se sienta de la misma casa. El
+// viaje final al soltar en RadialNav.jsx: ni brusco ni lento (~400ms).
+const SPRING_MS = 400;
 const SPRING_EASE = "cubic-bezier(0.22, 1.12, 0.36, 1)";
 const FADE_MS = 220;
 
-// Cuánto se adelanta la cámara hacia la pestaña que está bajo el dedo
-// mientras se arrastra en la rueda de RadialNav.jsx, antes de soltar.
-const PREVIEW_BLEND = 0.22;
-const PREVIEW_MS = 180;
+// Cuánto se asoma la cámara hacia el sector que RadialNav.jsx tiene
+// seleccionado (no bajo el dedo en vivo: solo tras confirmarse estable
+// ~150ms allá, ver PEEK_DELAY_MS en ese archivo) — un asomo leve, no un
+// desplazamiento completo.
+const PEEK_RATIO = 0.12;
+const PEEK_MS = 180;
 
 /**
  * Un solo mundo continuo: todas las pestañas quedan siempre montadas, una
@@ -27,7 +30,8 @@ const PREVIEW_MS = 180;
  *
  * `dimmed` y `previewId` los maneja RadialNav.jsx (vía App.jsx) mientras
  * la rueda de navegación está abierta — desenfoque/retroceso de fondo y
- * el adelanto de cámara hacia la pestaña bajo el dedo, respectivamente.
+ * el asomo leve hacia el sector seleccionado (estable, no en vivo bajo
+ * el dedo), respectivamente.
  */
 export default function World({ tabs, activeId, bgColor, dimmed = false, previewId = null }) {
   const reducedMotion = usePrefersReducedMotion();
@@ -35,7 +39,7 @@ export default function World({ tabs, activeId, bgColor, dimmed = false, preview
   const previewIndex = previewId ? tabs.findIndex((t) => t.id === previewId) : -1;
   const isPreviewing = previewIndex >= 0 && previewIndex !== activeIndex;
   const blendedIndex = isPreviewing
-    ? activeIndex + (previewIndex - activeIndex) * PREVIEW_BLEND
+    ? activeIndex + (previewIndex - activeIndex) * PEEK_RATIO
     : activeIndex;
 
   return (
@@ -56,7 +60,7 @@ export default function World({ tabs, activeId, bgColor, dimmed = false, preview
           transform: reducedMotion ? "none" : `translateX(-${blendedIndex * 100}vw)`,
           transition: reducedMotion
             ? "none"
-            : `transform ${isPreviewing ? PREVIEW_MS : SPRING_MS}ms ${isPreviewing ? "ease-out" : SPRING_EASE}`,
+            : `transform ${isPreviewing ? PEEK_MS : SPRING_MS}ms ${isPreviewing ? "ease-out" : SPRING_EASE}`,
         }}
       >
         {tabs.map((tab) => {
