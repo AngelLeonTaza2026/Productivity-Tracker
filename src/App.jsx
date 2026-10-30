@@ -75,6 +75,7 @@ export default function App() {
         onOpenChange={setWheelOpen}
         onPreview={setPreviewId}
         onPreviewCancel={() => setPreviewId(null)}
+        theme={theme}
       />
     </>
   );
