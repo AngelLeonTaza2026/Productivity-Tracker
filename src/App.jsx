@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import DayFlow from "./components/DayFlow.jsx";
 import Heatmap from "./components/Heatmap.jsx";
 import World from "./components/World.jsx";
+import RadialNav from "./components/RadialNav.jsx";
 import { TABS } from "./tabs.jsx";
 import { NAV_RESERVE } from "./layout.js";
 import { THEMES } from "./themes.js";
@@ -11,6 +12,10 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [themeId,    setThemeId]    = useState("default");
   const [landing,    setLanding]    = useState(null); // { date, color } | null
+  const [wheelOpen,  setWheelOpen]  = useState(false);
+  const [previewId,  setPreviewId]  = useState(null);
+  const [dayBlocking,  setDayBlocking]  = useState(false);
+  const [yearBlocking, setYearBlocking] = useState(false);
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const theme = THEMES[themeId] ?? THEMES.default;
@@ -39,6 +44,7 @@ export default function App() {
             onRequestLanding={requestLanding}
             refreshKey={refreshKey}
             isActive={view === "today"}
+            onBlockingChange={setDayBlocking}
           />
         </div>
       ) : (
@@ -51,6 +57,7 @@ export default function App() {
             landing={landing}
             onLandingDone={() => setLanding(null)}
             isActive={view === "year"}
+            onBlockingChange={setYearBlocking}
           />
         </div>
       ),
@@ -58,27 +65,17 @@ export default function App() {
 
   return (
     <>
-      <World tabs={tabs} activeId={view} bgColor={theme.bg} />
+      <World tabs={tabs} activeId={view} bgColor={theme.bg} dimmed={wheelOpen} previewId={previewId} />
 
-      {/* Botones de depuración temporales del Paso 1 — el Paso 2 los
-          reemplaza por el ancla de RadialNav.jsx */}
-      <div
-        className="fixed flex gap-2 z-50"
-        style={{ bottom: "max(10px, env(safe-area-inset-bottom))", left: 0, right: 0, justifyContent: "center" }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setView(t.id)}
-            className={[
-              "px-3 py-1 rounded-full text-xs tracking-widest uppercase transition-colors",
-              view === t.id ? "bg-neutral-700 text-white" : "bg-neutral-900 text-neutral-500",
-            ].join(" ")}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <RadialNav
+        tabs={TABS}
+        activeId={view}
+        onSelect={setView}
+        hidden={dayBlocking || yearBlocking}
+        onOpenChange={setWheelOpen}
+        onPreview={setPreviewId}
+        onPreviewCancel={() => setPreviewId(null)}
+      />
     </>
   );
 }

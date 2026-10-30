@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Timer from "./Timer.jsx";
 import FocusMode from "./FocusMode.jsx";
@@ -60,7 +60,7 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, refreshKey, isActive }) {
+export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, refreshKey, isActive, onBlockingChange }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -79,6 +79,12 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
   // dentro de la rama "día abierto", desaparecería apenas confirmClose()
   // cambia todayAlreadyClosed y el componente salta a la rama "ya registrado".
   const [closingRecord, setClosingRecord] = useState(null); // DayRecord recién cerrado
+
+  // El ancla de RadialNav se oculta mientras haya un modal abierto o el
+  // modo enfoque esté activo — se lo avisa a App.jsx para que lo combine
+  // con la señal equivalente de Heatmap.jsx.
+  const blocking = closing || !!closingRecord || timer.isRunning;
+  useEffect(() => { onBlockingChange?.(blocking); }, [blocking, onBlockingChange]);
 
   // `content` es lo que vive EN el slot de esta pestaña dentro de World.jsx
   // (se mueve con la cámara). `overlays` es todo lo `fixed`, que se manda

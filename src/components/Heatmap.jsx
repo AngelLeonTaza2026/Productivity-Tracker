@@ -255,6 +255,7 @@ export default function Heatmap({
   landing,      // { date, color } | null — aterrizaje desde el ritual de cierre de día
   onLandingDone,
   isActive,
+  onBlockingChange,
 }) {
   const [recordMap,    setRecordMap]    = useState({});
   const [selectedDate, setSelectedDate] = useState(null);
@@ -330,6 +331,12 @@ export default function Heatmap({
   const radius   = Math.max(1, Math.round(cellPx * 0.1));
   const isFlying = flyPhase !== "idle";
   const isLanding = flyPhase.startsWith("land-");
+
+  // El ancla de RadialNav se oculta mientras haya un modal abierto (editar
+  // celda, exportar) o esté en curso el portal/aterrizaje — se lo avisa a
+  // App.jsx para que lo combine con la señal equivalente de DayFlow.jsx.
+  const blocking = isFlying || exportPanelOpen;
+  useEffect(() => { onBlockingChange?.(blocking); }, [blocking, onBlockingChange]);
 
   useEffect(() => {
     function onResize() { setDims(computeCell()); }
