@@ -10,7 +10,11 @@ function todayDate() {
   return `${y}-${m}-${day}`;
 }
 
-export function useDayFlow() {
+// `refreshKey` reemplaza al viejo truco de remontar <DayFlow key={refreshKey}>
+// — ahora que el mundo (World.jsx) mantiene todo montado siempre, esto es
+// lo que hace que el hook vuelva a leer la DB si algo cambió desde afuera
+// (ej. se editó el día de hoy desde la vista anual).
+export function useDayFlow(refreshKey) {
   const [activeRecord, setActiveRecord] = useState(undefined);
   const [closing, setClosing] = useState(false);
   const [todayAlreadyClosed, setTodayAlreadyClosed] = useState(false);
@@ -24,7 +28,7 @@ export function useDayFlow() {
       setActiveRecord(null);
     }
     load();
-  }, []);
+  }, [refreshKey]);
 
   const openDay = useCallback(async () => {
     const existing = await getRecordByDate(todayDate());

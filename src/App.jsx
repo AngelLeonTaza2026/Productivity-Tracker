@@ -1,7 +1,9 @@
 import { useCallback, useState } from "react";
 import DayFlow from "./components/DayFlow.jsx";
 import Heatmap from "./components/Heatmap.jsx";
-import Nav, { NAV_RESERVE } from "./components/Nav.jsx";
+import World from "./components/World.jsx";
+import { TABS } from "./tabs.jsx";
+import { NAV_RESERVE } from "./layout.js";
 import { THEMES } from "./themes.js";
 
 export default function App() {
@@ -23,30 +25,24 @@ export default function App() {
     setView("year");
   }
 
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: theme.bg, paddingBottom: NAV_RESERVE }}>
-      {view === "today" && (
-        <div
-          key="today"
-          className="flex items-center justify-center px-6"
-          style={{ minHeight: `calc(100vh - ${NAV_RESERVE}px)`, animation: "view-enter-left 260ms ease" }}
-        >
+  // Las dos vistas quedan siempre montadas (World.jsx mueve una cámara
+  // entre ellas), así conservan su propio estado — el timer sigue su
+  // curso aunque estés mirando el año.
+  const tabs = TABS.map((t) => ({
+    ...t,
+    render: () =>
+      t.id === "today" ? (
+        <div className="flex items-center justify-center w-full h-full px-6" style={{ paddingBottom: NAV_RESERVE }}>
           <DayFlow
-            key={refreshKey}
             onDayChange={refresh}
             theme={theme}
             onRequestLanding={requestLanding}
-            onSwipeToYear={() => setView("year")}
+            refreshKey={refreshKey}
+            isActive={view === "today"}
           />
         </div>
-      )}
-
-      {view === "year" && (
-        <div
-          key="year"
-          className="fixed inset-0"
-          style={{ bottom: NAV_RESERVE, backgroundColor: theme.bg, animation: "view-enter-right 260ms ease" }}
-        >
+      ) : (
+        <div className="w-full h-full" style={{ paddingBottom: NAV_RESERVE }}>
           <Heatmap
             refreshKey={refreshKey}
             onRecordChange={refresh}
@@ -54,12 +50,35 @@ export default function App() {
             onThemeToggle={toggleTheme}
             landing={landing}
             onLandingDone={() => setLanding(null)}
-            onSwipeToToday={() => setView("today")}
+            isActive={view === "year"}
           />
         </div>
-      )}
+      ),
+  }));
 
-      <Nav view={view} onChangeView={setView} />
-    </div>
+  return (
+    <>
+      <World tabs={tabs} activeId={view} bgColor={theme.bg} />
+
+      {/* Botones de depuración temporales del Paso 1 — el Paso 2 los
+          reemplaza por el ancla de RadialNav.jsx */}
+      <div
+        className="fixed flex gap-2 z-50"
+        style={{ bottom: "max(10px, env(safe-area-inset-bottom))", left: 0, right: 0, justifyContent: "center" }}
+      >
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setView(t.id)}
+            className={[
+              "px-3 py-1 rounded-full text-xs tracking-widest uppercase transition-colors",
+              view === t.id ? "bg-neutral-700 text-white" : "bg-neutral-900 text-neutral-500",
+            ].join(" ")}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

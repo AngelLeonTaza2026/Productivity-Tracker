@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import Timer from "./Timer.jsx";
 import FocusMode from "./FocusMode.jsx";
 import CloseModal from "./CloseModal.jsx";
@@ -6,7 +7,7 @@ import ClosingPhrase from "./ClosingPhrase.jsx";
 import { useDayFlow } from "../hooks/useDayFlow.js";
 import { useTimer } from "../hooks/useTimer.js";
 import { THEMES } from "../themes.js";
-import { NAV_RESERVE } from "./Nav.jsx";
+import { NAV_RESERVE } from "../layout.js";
 
 function todayLabel() {
   return new Date().toLocaleDateString("es", {
@@ -37,9 +38,8 @@ function MoonIcon() {
   );
 }
 
-// Esquina inferior izquierda — opuesta a la fecha, por ENCIMA de la barra
-// de navegación (NAV_RESERVE, definida en Nav.jsx). Antes vivía pegado al
-// borde de la pantalla e invadía esa barra.
+// Esquina inferior izquierda — opuesta a la fecha, por ENCIMA del anclaje
+// de navegación (NAV_RESERVE, definida en layout.js).
 function CloseDayButton({ onClick }) {
   return (
     <button
@@ -60,13 +60,7 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-// Franja del borde derecho reservada para el swipe hacia la vista anual
-// (como el "volver" de iOS, pero yendo hacia adelante) — fuera de esa
-// franja no pasa nada, no hay ningún otro gesto de arrastre en esta vista.
-const EDGE_ZONE = 24;
-const SWIPE_THRESHOLD = 60;
-
-export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, onSwipeToYear }) {
+export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, refreshKey, isActive }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -76,7 +70,7 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
     requestClose,
     cancelClose,
     confirmClose,
-  } = useDayFlow();
+  } = useDayFlow(refreshKey);
 
   // Compartido con FocusMode: ambos deben reaccionar al mismo isRunning
   const timer = useTimer();
@@ -86,42 +80,12 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
   // cambia todayAlreadyClosed y el componente salta a la rama "ya registrado".
   const [closingRecord, setClosingRecord] = useState(null); // DayRecord recién cerrado
 
-  // Swipe desde el borde derecho → vista anual
-  const onSwipeToYearRef = useRef(onSwipeToYear);
-  useEffect(() => { onSwipeToYearRef.current = onSwipeToYear; }, [onSwipeToYear]);
-
-  useEffect(() => {
-    let startX = null;
-    let candidate = false;
-
-    function onTouchStart(e) {
-      if (e.touches.length !== 1) return;
-      startX = e.touches[0].clientX;
-      candidate = startX > window.innerWidth - EDGE_ZONE;
-    }
-    function onTouchMove(e) {
-      if (!candidate || startX === null) return;
-      const dx = e.touches[0].clientX - startX;
-      if (dx < -SWIPE_THRESHOLD) {
-        candidate = false;
-        onSwipeToYearRef.current?.();
-      }
-    }
-    function onTouchEnd() { candidate = false; startX = null; }
-
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove", onTouchMove, { passive: true });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", onTouchEnd, { passive: true });
-    return () => {
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-      document.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, []);
-
+  // `content` es lo que vive EN el slot de esta pestaña dentro de World.jsx
+  // (se mueve con la cámara). `overlays` es todo lo `fixed`, que se manda
+  // a un portal — un ancestro con `transform` (la pista de World.jsx) hace
+  // que `position:fixed` deje de posicionarse contra la pantalla real.
   let content = null;
+  let overlays = null;
 
   if (activeRecord === undefined) {
     // Cargando
@@ -147,26 +111,25 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
   } else if (!activeRecord) {
     // Sin día abierto
     content = (
-      <>
-        <div className="flex flex-col items-center gap-4">
-          <button
-            onClick={async () => { await openDay(); onDayChange?.(); }}
-            className="px-10 py-3 rounded-full bg-amber-700 text-amber-50 text-sm font-medium tracking-widest uppercase hover:bg-amber-600 transition-all duration-200"
-          >
-            Abrir día
-          </button>
-        </div>
-        <DateBadge>{todayLabel()}</DateBadge>
-      </>
+      <div className="flex flex-col items-center gap-4">
+        <button
+          onClick={async () => { await openDay(); onDayChange?.(); }}
+          className="px-10 py-3 rounded-full bg-amber-700 text-amber-50 text-sm font-medium tracking-widest uppercase hover:bg-amber-600 transition-all duration-200"
+        >
+          Abrir día
+        </button>
+      </div>
     );
+    overlays = <DateBadge>{todayLabel()}</DateBadge>;
   } else {
     // Día abierto
     content = (
+      <div className="flex flex-col items-center gap-12">
+        <Timer timer={timer} />
+      </div>
+    );
+    overlays = (
       <>
-        <div className="flex flex-col items-center gap-12">
-          <Timer timer={timer} />
-        </div>
-
         <CloseDayButton onClick={requestClose} />
 
         <DateBadge>
@@ -201,7 +164,13 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
     <>
       {content}
 
-      {closingRecord && (
+      {/* Con las dos vistas siempre montadas, estos overlays `fixed` (sobre
+          todo FocusMode, que tapa toda la pantalla) tienen que ocultarse
+          solos al dejar de ser la pestaña activa — si no, quedarían
+          flotando encima de la otra vista al cambiar. */}
+      {isActive && overlays && createPortal(overlays, document.body)}
+
+      {isActive && closingRecord && createPortal(
         <ClosingPhrase
           record={closingRecord}
           theme={theme}
@@ -210,7 +179,8 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
             setClosingRecord(null);
             onDayChange?.();
           }}
-        />
+        />,
+        document.body
       )}
     </>
   );
