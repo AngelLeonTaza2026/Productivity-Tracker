@@ -12,23 +12,22 @@ const LABEL_RADIUS_RATIO = 0.6;  // a qué distancia del pivote queda el icono/e
 const OPEN_MS = 420;
 const OPEN_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
 const FADE_MS = 160;
-const GLOW_MS = 200; // transición del resaltado al cambiar de sector
+const GLOW_MS = 130; // transición del resaltado al cambiar de sector — empieza en el mismo frame del cruce
 
 // --- Sensibilidad de la selección (ajustables sin tocar la lógica) ---
 // Radio por debajo del cual se ignora el dedo por completo — cerca del
-// pivote el ángulo cambia muchísimo con movimientos mínimos.
+// pivote el ángulo cambia muchísimo con movimientos mínimos. Junto con
+// HYSTERESIS_DEG es lo que evita la hipersensibilidad, sin meter retraso
+// de tiempo (no hay temporizadores en el camino de la selección).
 const DEAD_RADIUS_RATIO = 0.3;
 // Grados que el dedo debe adentrarse en un sector nuevo, más allá del
-// límite, antes de que cuente como candidato a selección.
+// límite, antes de que cuente como selección — el cambio se acepta de
+// inmediato en cuanto se cruza, sin espera adicional.
 const HYSTERESIS_DEG = 15;
-// Filtro pasa-bajos sobre el ángulo del dedo (0-1: más alto = menos filtro).
-const SMOOTHING = 0.35;
-// Tiempo que el dedo debe permanecer en el sector candidato antes de que
-// se confirme como la selección iluminada.
-const CONFIRM_MS = 80;
-// Tiempo que la selección debe quedar estable antes de que la cámara
-// recién empiece a asomarse hacia ella (ver PEEK_RATIO en World.jsx).
-const PEEK_DELAY_MS = 150;
+// Filtro pasa-bajos sobre el ángulo del dedo (0-1: más alto = menos
+// filtro = más reactivo). Solo un suavizado leve del ruido del sensor
+// táctil — la histéresis es la que realmente controla la sensibilidad.
+const SMOOTHING = 0.65;
 
 function AnchorIcon() {
   return (
@@ -87,25 +86,23 @@ function sectorWithHysteresis(angle, committed, boundaries) {
  * (de izquierda a derecha, igual que el orden de pestañas en World.jsx)
  * y solo se anima al abrirse/cerrarse. Mantener presionado el ancla
  * (~300ms) la abre con la pestaña actual ya iluminada; arrastrar sin
- * soltar ilumina otro sector (con zona muerta, histéresis y confirmación
- * por tiempo para que no sea hipersensible); soltar confirma lo
- * iluminado.
+ * soltar ilumina otro sector al instante en que se cruza (zona muerta +
+ * histéresis evitan la hipersensibilidad, sin temporizadores de por
+ * medio); soltar confirma lo iluminado.
  */
 export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChange, onPreview, onPreviewCancel, theme }) {
   const reducedMotion = usePrefersReducedMotion();
   const [open, setOpen] = useState(false);
-  const [committedSector, setCommittedSector] = useState(0);
 
   const anchorRef = useRef(null);
   const longPressTimer = useRef(null);
-  const confirmTimer = useRef(null);
-  const peekTimer = useRef(null);
   const pivotRef = useRef({ x: 0, y: 0 });
   const radiusRef = useRef(150);
   const baseIndexRef = useRef(0);      // pestaña activa al abrir
-  const committedRef = useRef(0);      // espejo síncrono de committedSector, para los timers
-  const candidateRef = useRef(null);
+  const committedRef = useRef(0);      // sector iluminado — vive solo en refs, nunca dispara render
   const smoothedAngleRef = useRef(null);
+  const glowRefs = useRef([]);
+  const iconRefs = useRef([]);
 
   const count = tabs.length;
   const boundaries = useMemo(() => {
@@ -117,34 +114,33 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
     [boundaries, tabs.length]
   );
 
+  const accent = theme?.cells?.h5 ?? "#4ade80";
+
   function setOpenState(next) {
     setOpen(next);
     onOpenChange?.(next);
   }
 
-  function commitSector(idx) {
-    committedRef.current = idx;
-    setCommittedSector(idx);
-    candidateRef.current = null;
-    clearTimeout(peekTimer.current);
-    if (idx === baseIndexRef.current) {
-      onPreviewCancel?.();
-    } else {
-      peekTimer.current = setTimeout(() => onPreview?.(tabs[idx].id), PEEK_DELAY_MS);
-    }
+  // Pinta el resaltado directo en el DOM vía refs — nunca por React state,
+  // así un cambio de sector no dispara un re-render de todo el árbol.
+  function paintSector(idx) {
+    tabs.forEach((_, i) => {
+      const on = i === idx;
+      const glow = glowRefs.current[i];
+      if (glow) glow.style.opacity = on ? "0.22" : "0";
+      const icon = iconRefs.current[i];
+      if (icon) icon.style.color = on ? accent : "rgba(255,255,255,0.45)";
+    });
   }
 
-  function considerSector(raw) {
-    if (raw === committedRef.current) {
-      clearTimeout(confirmTimer.current);
-      candidateRef.current = null;
-      return;
-    }
-    if (raw !== candidateRef.current) {
-      candidateRef.current = raw;
-      clearTimeout(confirmTimer.current);
-      confirmTimer.current = setTimeout(() => commitSector(raw), CONFIRM_MS);
-    }
+  // Se acepta en el mismo instante en que la histéresis se cruza — sin
+  // temporizador de confirmación de por medio.
+  function commitSector(idx) {
+    if (idx === committedRef.current) return;
+    committedRef.current = idx;
+    paintSector(idx);
+    if (idx === baseIndexRef.current) onPreviewCancel?.();
+    else onPreview?.(tabs[idx].id);
   }
 
   function openWheel() {
@@ -154,15 +150,12 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
     const idx = Math.max(0, tabs.findIndex((t) => t.id === activeId));
     baseIndexRef.current = idx;
     committedRef.current = idx;
-    candidateRef.current = null;
     smoothedAngleRef.current = null;
-    setCommittedSector(idx);
+    paintSector(idx);
     setOpenState(true);
   }
 
   function closeWheel(confirm) {
-    clearTimeout(confirmTimer.current);
-    clearTimeout(peekTimer.current);
     if (confirm) onSelect(tabs[committedRef.current].id);
     onPreviewCancel?.();
     setOpenState(false);
@@ -191,7 +184,7 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
       : smoothedAngleRef.current + SMOOTHING * (rawAngle - smoothedAngleRef.current);
 
     const raw = sectorWithHysteresis(smoothedAngleRef.current, committedRef.current, boundaries);
-    considerSector(raw);
+    commitSector(raw);
   }
 
   function onPointerUp(e) {
@@ -208,7 +201,6 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
   const radius = radiusRef.current;
   const openMs = reducedMotion ? 160 : OPEN_MS;
   const openEase = reducedMotion ? "ease-out" : OPEN_EASE;
-  const accent = theme?.cells?.h5 ?? "#4ade80";
 
   const rimPath = useMemo(() => {
     const a = pointAt(-90, radius);
@@ -264,9 +256,10 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
             {sectorPaths.map((d, i) => (
               <path
                 key={`glow-${tabs[i].id}`}
+                ref={(el) => (glowRefs.current[i] = el)}
                 d={d}
                 fill={accent}
-                opacity={i === committedSector ? 0.22 : 0}
+                opacity={0}
                 style={{ transition: `opacity ${GLOW_MS}ms ease-out` }}
               />
             ))}
@@ -280,23 +273,23 @@ export default function RadialNav({ tabs, activeId, onSelect, hidden, onOpenChan
           </svg>
 
           {tabs.map((tab, i) => {
-            const isSelected = i === committedSector;
             const p = pointAt(midAngles[i], radius * LABEL_RADIUS_RATIO);
             return (
               <div
                 key={tab.id}
+                ref={(el) => (iconRefs.current[i] = el)}
                 aria-hidden="true"
                 className="absolute flex flex-col items-center justify-center"
                 style={{
                   left: p.x,
                   top: p.y,
                   transform: "translate(-50%, -50%)",
-                  color: isSelected ? accent : "rgba(255,255,255,0.45)",
+                  color: "rgba(255,255,255,0.45)",
                   transition: `color ${GLOW_MS}ms ease-out`,
                   pointerEvents: "none",
                 }}
               >
-                {tab.icon(isSelected)}
+                {tab.icon(i === baseIndexRef.current)}
                 <span className="mt-1 text-[10px] uppercase tracking-wide" style={{ whiteSpace: "nowrap" }}>
                   {tab.label}
                 </span>

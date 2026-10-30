@@ -1,17 +1,14 @@
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion.js";
 
-// Resorte con ligero overshoot — misma familia de curva que ya se usa en
-// el resto de la app para transiciones "satisfactorias" (portal del
-// heatmap, modales), para que la cámara se sienta de la misma casa. El
-// viaje final al soltar en RadialNav.jsx: ni brusco ni lento (~400ms).
-const SPRING_MS = 400;
+// Resorte firme — viaje final de la cámara al soltar en RadialNav.jsx,
+// rápido pero sin golpe seco.
+const SPRING_MS = 280;
 const SPRING_EASE = "cubic-bezier(0.22, 1.12, 0.36, 1)";
 const FADE_MS = 220;
 
 // Cuánto se asoma la cámara hacia el sector que RadialNav.jsx tiene
-// seleccionado (no bajo el dedo en vivo: solo tras confirmarse estable
-// ~150ms allá, ver PEEK_DELAY_MS en ese archivo) — un asomo leve, no un
-// desplazamiento completo.
+// iluminado — arranca en el mismo instante en que cambia la selección
+// allá (sin espera), un asomo leve, no un desplazamiento completo.
 const PEEK_RATIO = 0.12;
 const PEEK_MS = 180;
 
@@ -22,16 +19,18 @@ const PEEK_MS = 180;
  * vista conserva su propio estado (timer, scroll, lo que sea) todo el
  * tiempo, en vez de perderlo al volver.
  *
- * Solo anima `transform`/`opacity`/`filter` (nunca left/width) para que
+ * Solo anima `transform`/`opacity` (nunca left/width/filter) para que
  * corra en el compositor, no en el hilo principal — clave para 60fps en
- * el grid de 380+ celdas del heatmap. Respeta prefers-reduced-motion: ahí
- * no hay pista que mover, las pestañas quedan apiladas y se cruzan con
- * un fade.
+ * el grid de 380+ celdas del heatmap. El valor del blur de fondo queda
+ * fijo al abrir la rueda (no se anima su intensidad, solo el escalado
+ * que lo acompaña) porque animar `filter` es costoso para el hilo
+ * principal justo cuando más importa la respuesta táctil. Respeta
+ * prefers-reduced-motion: ahí no hay pista que mover, las pestañas
+ * quedan apiladas y se cruzan con un fade.
  *
  * `dimmed` y `previewId` los maneja RadialNav.jsx (vía App.jsx) mientras
  * la rueda de navegación está abierta — desenfoque/retroceso de fondo y
- * el asomo leve hacia el sector seleccionado (estable, no en vivo bajo
- * el dedo), respectivamente.
+ * el asomo leve hacia el sector iluminado, respectivamente.
  */
 export default function World({ tabs, activeId, bgColor, dimmed = false, previewId = null }) {
   const reducedMotion = usePrefersReducedMotion();
@@ -48,8 +47,8 @@ export default function World({ tabs, activeId, bgColor, dimmed = false, preview
       style={{
         backgroundColor: bgColor,
         transform: dimmed ? "scale(0.95)" : "scale(1)",
-        filter: dimmed ? "blur(6px)" : "none",
-        transition: "transform 380ms ease, filter 380ms ease",
+        filter: dimmed ? "blur(6px)" : "none", // fijo — nunca animado, ver comentario arriba
+        transition: "transform 380ms ease",
       }}
     >
       <div
