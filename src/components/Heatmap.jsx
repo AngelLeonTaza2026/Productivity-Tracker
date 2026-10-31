@@ -250,7 +250,7 @@ export default function Heatmap({
   year = new Date().getFullYear(),
   refreshKey,
   onRecordChange,
-  theme = THEMES.default,
+  theme = THEMES.light,
   onThemeToggle,
   landing,      // { date, color } | null — aterrizaje desde el ritual de cierre de día
   onLandingDone,

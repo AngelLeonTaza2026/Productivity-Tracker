@@ -19,11 +19,11 @@ function todayLabel() {
 
 // Esquina superior derecha — misma posición que el botón de exportar del
 // heatmap, para que la fecha no compita visualmente con el indicador central.
-function DateBadge({ children }) {
+function DateBadge({ theme, children }) {
   return (
     <p
-      className="fixed select-none text-neutral-600 text-xs tracking-widest uppercase"
-      style={{ top: "max(14px, env(safe-area-inset-top))", right: 14, zIndex: 20 }}
+      className="fixed select-none text-xs tracking-widest uppercase"
+      style={{ top: "max(14px, env(safe-area-inset-top))", right: 14, zIndex: 20, color: theme.text.muted }}
     >
       {children}
     </p>
@@ -40,18 +40,18 @@ function MoonIcon() {
 
 // Esquina inferior izquierda — opuesta a la fecha, por ENCIMA del anclaje
 // de navegación (NAV_RESERVE, definida en layout.js).
-function CloseDayButton({ onClick }) {
+function CloseDayButton({ theme, onClick }) {
   return (
     <button
       onClick={onClick}
       aria-label="Cerrar día"
-      className="fixed flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300 transition-colors duration-200"
-      style={{ bottom: NAV_RESERVE + 14, left: 24, zIndex: 20 }}
+      className="fixed flex flex-col items-center gap-1 transition-colors duration-200"
+      style={{ bottom: NAV_RESERVE + 14, left: 24, zIndex: 20, color: theme.text.muted }}
     >
       <span className="relative flex items-center justify-center" style={{ width: 34, height: 34 }}>
         <span
-          className="absolute inset-0 rounded-full bg-slate-700"
-          style={{ animation: "close-pulse 2.6s ease-in-out infinite" }}
+          className="absolute inset-0 rounded-full"
+          style={{ backgroundColor: theme.text.faint, animation: "close-pulse 2.6s ease-in-out infinite" }}
         />
         <MoonIcon />
       </span>
@@ -60,7 +60,7 @@ function CloseDayButton({ onClick }) {
   );
 }
 
-export default function DayFlow({ onDayChange, theme = THEMES.default, onRequestLanding, refreshKey, isActive, onBlockingChange }) {
+export default function DayFlow({ onDayChange, theme = THEMES.light, onRequestLanding, refreshKey, isActive, onBlockingChange }) {
   const {
     activeRecord,
     todayAlreadyClosed,
@@ -101,14 +101,15 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
     content = (
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="w-2 h-2 rounded-full bg-green-600 mx-auto" />
-        <p className="text-neutral-400 text-sm">Día de hoy ya registrado</p>
-        <p className="text-xs text-neutral-600 tracking-widest uppercase">{todayLabel()}</p>
-        <p className="text-xs text-neutral-700">Podés editarlo desde la vista anual</p>
+        <p className="text-sm" style={{ color: theme.text.primary }}>Día de hoy ya registrado</p>
+        <p className="text-xs tracking-widest uppercase" style={{ color: theme.text.muted }}>{todayLabel()}</p>
+        <p className="text-xs" style={{ color: theme.text.faint }}>Podés editarlo desde la vista anual</p>
 
         {/* Escape hatch: reabrir si fue un error */}
         <button
           onClick={async () => { await forceReopenDay(); onDayChange?.(); }}
-          className="mt-4 text-xs text-neutral-600 hover:text-neutral-400 underline underline-offset-4 transition-colors"
+          className="mt-4 text-xs underline underline-offset-4 transition-colors"
+          style={{ color: theme.text.muted }}
         >
           Empezar de nuevo igual
         </button>
@@ -126,7 +127,7 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
         </button>
       </div>
     );
-    overlays = <DateBadge>{todayLabel()}</DateBadge>;
+    overlays = <DateBadge theme={theme}>{todayLabel()}</DateBadge>;
   } else {
     // Día abierto
     content = (
@@ -136,9 +137,9 @@ export default function DayFlow({ onDayChange, theme = THEMES.default, onRequest
     );
     overlays = (
       <>
-        <CloseDayButton onClick={requestClose} />
+        <CloseDayButton theme={theme} onClick={requestClose} />
 
-        <DateBadge>
+        <DateBadge theme={theme}>
           {new Date(`${activeRecord.date}T00:00:00`).toLocaleDateString("es", {
             weekday: "long",
             day: "numeric",
